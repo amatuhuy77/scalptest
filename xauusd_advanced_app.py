@@ -138,7 +138,7 @@ st.subheader("📊 Grafik Live (OANDA)")
 # ==========================================
 # PENGATURAN UKURAN GRAFIK (PANJANG & LEBAR)
 # ==========================================
-TINGGI_GRAFIK = 500  # Ubah angka ini jika ingin lebih panjang atau pendek ke bawah
+TINGGI_GRAFIK = 900  # Ubah angka ini jika ingin lebih panjang atau pendek ke bawah
 LEBAR_GRAFIK = "100%" # Ubah ukuran lebar jika diinginkan
 
 tradingview_html = """

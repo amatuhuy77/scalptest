@@ -138,17 +138,12 @@ st.subheader("📊 Grafik Live (OANDA)")
 # ==========================================
 # PENGATURAN UKURAN GRAFIK (PANJANG & LEBAR)
 # ==========================================
-# 1. Atur Tinggi (Panjang ke bawah): Ubah angka 500 di bawah ini sesuai selera 
-#    (Misal: 400 untuk lebih pendek, atau 650 untuk lebih panjang).
-TINGGI_GRAFIK = 500 
+TINGGI_GRAFIK = 500  # Ubah angka ini jika ingin lebih panjang atau pendek ke bawah
+LEBAR_GRAFIK = "100%" # Ubah ukuran lebar jika diinginkan
 
-# 2. Atur Lebar: Anda bisa mengganti "100%" dengan ukuran piksel, misal "800px" 
-#    jika ingin membatasinya agar tidak selebar layar penuh.
-LEBAR_GRAFIK = "100%"
-
-tradingview_html = f"""
+tradingview_html = """
 <!-- TradingView Widget BEGIN -->
-<div class="tradingview-widget-container" style="height:100%; width:{LEBAR_GRAFIK};">
+<div class="tradingview-widget-container" style="height:100%; width:100%;">
   <div id="tradingview_xauusd" style="height:100%; width:100%;"></div>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript">
@@ -176,5 +171,4 @@ tradingview_html = f"""
 <!-- TradingView Widget END -->
 """
 
-# Menerapkan variabel tinggi grafik ke komponen web Streamlit
 components.html(tradingview_html, height=TINGGI_GRAFIK)

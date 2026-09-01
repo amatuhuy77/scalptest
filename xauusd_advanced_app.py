@@ -135,11 +135,21 @@ st.markdown("---")
 
 st.subheader("📊 Grafik Live (OANDA)")
 
-# Grafik TradingView disetel agar pas, nyaman dipandang, dan proporsional di HP
-tradingview_html = """
+# ==========================================
+# PENGATURAN UKURAN GRAFIK (PANJANG & LEBAR)
+# ==========================================
+# 1. Atur Tinggi (Panjang ke bawah): Ubah angka 500 di bawah ini sesuai selera 
+#    (Misal: 400 untuk lebih pendek, atau 650 untuk lebih panjang).
+TINGGI_GRAFIK = 500 
+
+# 2. Atur Lebar: Anda bisa mengganti "100%" dengan ukuran piksel, misal "800px" 
+#    jika ingin membatasinya agar tidak selebar layar penuh.
+LEBAR_GRAFIK = "100%"
+
+tradingview_html = f"""
 <!-- TradingView Widget BEGIN -->
-<div class="tradingview-widget-container" style="height:100%;width:100%">
-  <div id="tradingview_xauusd" style="height:100%;width:100%"></div>
+<div class="tradingview-widget-container" style="height:100%; width:{LEBAR_GRAFIK};">
+  <div id="tradingview_xauusd" style="height:100%; width:100%;"></div>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript">
   new TradingView.widget(
@@ -166,5 +176,5 @@ tradingview_html = """
 <!-- TradingView Widget END -->
 """
 
-# Tinggi dikunci di 500 pixel (Rasio paling pas untuk layar Android tanpa membuat mata lelah)
-components.html(tradingview_html, height=500)
+# Menerapkan variabel tinggi grafik ke komponen web Streamlit
+components.html(tradingview_html, height=TINGGI_GRAFIK)

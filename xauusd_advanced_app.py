@@ -7,10 +7,8 @@ import streamlit.components.v1 as components
 from datetime import datetime
 import pytz
 
-# Konfigurasi Halaman Khusus Mobile & Desktop
 st.set_page_config(page_title="XAU/USD M1 Scalper Pro", layout="wide", initial_sidebar_state="collapsed")
 
-# Suntikan CSS agar tampilan lebar penuh dan pas di Android
 st.markdown("""
     <style>
     .block-container {
@@ -29,7 +27,6 @@ st.markdown("""
 
 st.title("XAU/USD - M1 SCALPER AI (Valetax Cent) ⚡")
 
-# 1. Panel Sesi Pasar WITA (Kalimantan)
 def get_market_session_wita():
     wita = pytz.timezone('Asia/Makassar')
     now_wita = datetime.now(wita)
@@ -43,16 +40,16 @@ def get_market_session_wita():
 waktu, sesi, karakter = get_market_session_wita()
 st.info(f"🕒 **{waktu}** | **{sesi}**\n\n💡 {karakter}")
 
-# 2. Mesin AI Khusus M1 (Sangat Sensitif & Cepat)
-@st.cache_data(ttl=2) # Cache dipercepat 2 detik
+# Fungsi AI dengan penanganan error transparan & aman untuk Cloud
+@st.cache_data(ttl=5)
 def hitung_ai_m1():
-    # Menarik data M1 (1 hari terakhir saja agar data paling fresh dan responsif)
-    gold = yf.download("XAUUSD=X", period="1d", interval="1m", progress=False)
+    # Menggunakan period '5d' agar aman dari pembatasan 7 hari Yahoo Finance untuk data 1m
+    gold = yf.download("XAUUSD=X", period="5d", interval="1m", progress=False)
     
     if gold.empty:
-        gold = yf.download("GC=F", period="1d", interval="1m", progress=False)
+        gold = yf.download("GC=F", period="5d", interval="1m", progress=False)
     if gold.empty:
-        raise ValueError("Data M1 sedang sinkronisasi.")
+        raise ValueError("Yahoo Finance membatasi data M1 dari Cloud. Silakan tunggu 1 menit.")
 
     df = pd.DataFrame(index=gold.index)
     df['Close'] = gold['Close']
@@ -61,11 +58,9 @@ def hitung_ai_m1():
     df['Low'] = gold['Low']
     df.dropna(inplace=True)
     
-    # Feature Engineering khusus M1 (Sensitif terhadap perubahan cepat)
     df['Return'] = df['Close'].pct_change()
     df['Body'] = df['Close'] - df['Open']
     
-    # Periode diperpendek (SMA 10) untuk scalping cepat
     df['SMA_10'] = df['Close'].rolling(window=10).mean()
     df['Std_Dev'] = df['Close'].rolling(window=10).std()
     df['BB_Width'] = (df['SMA_10'] + (df['Std_Dev'] * 2)) - (df['SMA_10'] - (df['Std_Dev'] * 2))
@@ -75,14 +70,13 @@ def hitung_ai_m1():
                                      abs(df['Low'] - df['Close'].shift(1))))
     df['ATR'] = df['TR'].rolling(window=10).mean()
     
-    # Target 1 candle ke depan
     df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
     df.dropna(inplace=True)
     
-    if len(df) < 15: raise ValueError("Menunggu data M1 terkumpul.")
+    if len(df) < 15: 
+        raise ValueError(f"Data M1 terkumpul hanya {len(df)} baris. Belum cukup untuk AI.")
     
     features = ['Return', 'Body', 'BB_Width', 'ATR']
-    # Model XGBoost disetel dengan kedalaman lebih dangkal agar bereaksi instan
     model = XGBClassifier(n_estimators=50, learning_rate=0.15, max_depth=3, random_state=42)
     model.fit(df[features][:-1], df['Target'][:-1])
     
@@ -91,7 +85,6 @@ def hitung_ai_m1():
     
     return df['Close'].iloc[-1], df['ATR'].iloc[-1], proba[1]*100, proba[0]*100
 
-# 3. Panel AI Live M1 (Auto-Update setiap 5 Detik)
 st.subheader("🤖 Sinyal Scalping M1 (Auto-Update 5 Detik)")
 
 @st.fragment(run_every="5s")
@@ -99,14 +92,12 @@ def ai_scalper_dashboard():
     try:
         c_price, c_atr, p_naik, p_turun = hitung_ai_m1()
         
-        # Untuk scalping M1, jarak TP/SL dibuat lebih padat (1:1 atau 1:1.2 dari ATR)
         jarak_tp = c_atr * 1.2
         jarak_sl = c_atr * 0.9
         
         batas_naik = c_price + jarak_tp
         batas_turun = c_price - jarak_tp
         
-        # Ambang batas diturunkan sedikit ke 58% agar scalper tidak ketinggalan momentum
         if p_naik >= 58.0:
             st.success(f"🟢 **BUY SCALP** | Prob: **{p_naik:.1f}%** | Entry: **${c_price:.2f}**\n\n📈 **TP Cepat:** ${batas_naik:.2f} *(+${jarak_tp:.2f})* \n\n🛡️ **SL Ketat:** ${c_price - jarak_sl:.2f} *(-${jarak_sl:.2f})*")
         elif p_turun >= 58.0:
@@ -115,13 +106,13 @@ def ai_scalper_dashboard():
             st.warning(f"⚪ **HOLD / WAIT** | Naik {p_naik:.1f}% vs Turun {p_turun:.1f}%.\n\nPasar M1 sedang konsolidasi ketat. Tunggu arah pecah.")
             
     except Exception as e:
-        st.warning(f"Menyiapkan data M1 kilat... (Refresh dalam 5s)")
+        # Menampilkan pesan error asli agar kita tahu jika ada kendala jaringan API
+        st.error(f"Gagal memproses AI M1: {e}")
 
 ai_scalper_dashboard()
 
 st.markdown("---")
 
-# 4. Grafik True Live M1 (OANDA)
 st.subheader("📊 Grafik M1 Live (Fokus Scalping)")
 
 tradingview_html = """
@@ -154,5 +145,4 @@ tradingview_html = """
 <!-- TradingView Widget END -->
 """
 
-# Grafik dikunci 580px agar sangat pas di layar HP saat mode M1
 components.html(tradingview_html, height=580)

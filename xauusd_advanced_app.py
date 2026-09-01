@@ -12,15 +12,15 @@ st.set_page_config(page_title="XAU/USD M1 & M5 Scalper Pro", layout="wide", init
 st.markdown("""
     <style>
     .block-container {
-        padding-top: 0.8rem !important;
-        padding-bottom: 0.8rem !important;
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
+        padding-top: 0.6rem !important;
+        padding-bottom: 0.6rem !important;
+        padding-left: 0.4rem !important;
+        padding-right: 0.4rem !important;
         max-width: 100% !important;
     }
     @media (max-width: 768px) {
-        h1 { font-size: 1.5rem !important; }
-        h3 { font-size: 1.1rem !important; }
+        h1 { font-size: 1.4rem !important; }
+        h3 { font-size: 1rem !important; }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -63,7 +63,6 @@ def hitung_ai_multi(interval):
     df['Return'] = df['Close'].pct_change()
     df['Body'] = df['Close'] - df['Open']
     
-    # Penyesuaian jendela indikator berdasarkan timeframe
     window_size = 10 if interval == "M1" else 14
     
     df['SMA'] = df['Close'].rolling(window=window_size).mean()
@@ -95,16 +94,15 @@ st.subheader("🤖 Pilih Timeframe Analisis AI")
 if 'tf_aktif' not in st.session_state:
     st.session_state.tf_aktif = "M1"
 
-# Tombol Pilihan Interaktif M1 / M5
 pilih_col1, pilih_col2 = st.columns(2)
 with pilih_col1:
-    if st.button("⚡ Gunakan Mode M1 (Eksekusi Cepat)", use_container_width=True):
+    if st.button("⚡ Mode M1 (Cepat)", use_container_width=True):
         st.session_state.tf_aktif = "M1"
 with pilih_col2:
-    if st.button("🛡️ Gunakan Mode M5 (Konfirmasi Tren)", use_container_width=True):
+    if st.button("🛡️ Mode M5 (Tren)", use_container_width=True):
         st.session_state.tf_aktif = "M5"
 
-st.markdown(f"**Status Mesin AI Saat Ini:** Memproses Timeframe **{st.session_state.tf_aktif}** (Auto-Update 5 Detik)")
+st.markdown(f"**AI Aktif:** Timeframe **{st.session_state.tf_aktif}** (Auto-Update 5 Detik)")
 
 @st.fragment(run_every="5s")
 def ai_dual_dashboard():
@@ -112,7 +110,6 @@ def ai_dual_dashboard():
         tf = st.session_state.tf_aktif
         c_price, c_atr, p_naik, p_turun = hitung_ai_multi(tf)
         
-        # Pengali ATR disesuaikan agar M5 memiliki ruang napas lebih luas dibanding M1
         pengali_tp = 1.2 if tf == "M1" else 1.8
         pengali_sl = 0.9 if tf == "M1" else 1.2
         
@@ -123,11 +120,11 @@ def ai_dual_dashboard():
         batas_turun = c_price - jarak_tp
         
         if p_naik >= 58.0:
-            st.success(f"🟢 **BUY SCALP ({tf})** | Prob: **{p_naik:.1f}%** | Entry: **${c_price:.2f}**\n\n📈 **Target TP:** ${batas_naik:.2f} *(+${jarak_tp:.2f})* \n\n🛡️ **Stop Loss:** ${c_price - jarak_sl:.2f} *(-${jarak_sl:.2f})*")
+            st.success(f"🟢 **BUY SCALP ({tf})** | Prob: **{p_naik:.1f}%** | Entry: **${c_price:.2f}**\n\n📈 **TP:** ${batas_naik:.2f} *(+${jarak_tp:.2f})* \n\n🛡️ **SL:** ${c_price - jarak_sl:.2f} *(-${jarak_sl:.2f})*")
         elif p_turun >= 58.0:
-            st.error(f"🔴 **SELL SCALP ({tf})** | Prob: **{p_turun:.1f}%** | Entry: **${c_price:.2f}**\n\n📉 **Target TP:** ${batas_turun:.2f} *(-${jarak_tp:.2f})* \n\n🛡️ **Stop Loss:** ${c_price + jarak_sl:.2f} *(+${jarak_sl:.2f})*")
+            st.error(f"🔴 **SELL SCALP ({tf})** | Prob: **{p_turun:.1f}%** | Entry: **${c_price:.2f}**\n\n📉 **TP:** ${batas_turun:.2f} *(-${jarak_tp:.2f})* \n\n🛡️ **SL:** ${c_price + jarak_sl:.2f} *(+${jarak_sl:.2f})*")
         else:
-            st.warning(f"⚪ **HOLD / WAIT ({tf})** | Naik {p_naik:.1f}% vs Turun {p_turun:.1f}%.\n\nPasar sedang konsolidasi di timeframe {tf}. Tunggu arah dominan.")
+            st.warning(f"⚪ **WAIT ({tf})** | Naik {p_naik:.1f}% vs Turun {p_turun:.1f}%.\n\nPasar konsolidasi di {tf}. Tunggu arah dominan.")
             
     except Exception as e:
         st.error(f"Gagal memproses AI {st.session_state.tf_aktif}: {e}")
@@ -138,6 +135,7 @@ st.markdown("---")
 
 st.subheader("📊 Grafik Live (OANDA)")
 
+# Grafik TradingView disetel agar pas, nyaman dipandang, dan proporsional di HP
 tradingview_html = """
 <!-- TradingView Widget BEGIN -->
 <div class="tradingview-widget-container" style="height:100%;width:100%">
@@ -148,19 +146,19 @@ tradingview_html = """
   {
   "autosize": true,
   "symbol": "OANDA:XAUUSD",
-  "interval": "5",
+  "interval": "1",
   "timezone": "Asia/Makassar",
   "theme": "dark",
   "style": "1",
   "locale": "id",
   "enable_publishing": false,
-  "backgroundColor": "rgba(0, 0, 0, 1)",
-  "gridColor": "rgba(66, 66, 66, 1)",
+  "backgroundColor": "#0e1117",
+  "gridColor": "#222629",
   "hide_top_toolbar": false,
   "hide_legend": false,
   "save_image": false,
   "container_id": "tradingview_xauusd",
-  "toolbar_bg": "#f1f3f6"
+  "toolbar_bg": "#0e1117"
 }
   );
   </script>
@@ -168,4 +166,5 @@ tradingview_html = """
 <!-- TradingView Widget END -->
 """
 
-components.html(tradingview_html, height=580)
+# Tinggi dikunci di 500 pixel (Rasio paling pas untuk layar Android tanpa membuat mata lelah)
+components.html(tradingview_html, height=500)

@@ -3,4 +3,5 @@ yfinance
 pandas
 numpy
 xgboost
+scikit-learn
 pytz

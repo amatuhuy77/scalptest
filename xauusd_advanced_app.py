@@ -6,6 +6,7 @@ import streamlit.components.v1 as components
 from datetime import datetime
 import pytz
 import requests
+import time  # <-- Modul baru untuk mereset loading bar
 
 st.set_page_config(page_title="XAU/USD M1 & M5 Scalper Pro", layout="wide", initial_sidebar_state="collapsed")
 
@@ -41,9 +42,10 @@ waktu, sesi, karakter = get_market_session_wita()
 st.info(f"🕒 **{waktu}** | **{sesi}**\n\n💡 {karakter}")
 
 # =========================================================================
-# MESIN PENGAMBIL DATA TANGGUH (Direct Yahoo + Kraken API Fallback)
+# MESIN PENGAMBIL DATA TANGGUH 
+# (Cache diturunkan ke 30s agar selalu dapat data baru tiap refresh 60s)
 # =========================================================================
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def hitung_ai_multi(interval):
     df = pd.DataFrame()
     headers = {
@@ -69,7 +71,7 @@ def hitung_ai_multi(interval):
     except Exception:
         pass 
 
-    # --- JALUR 2: KRAKEN API (Jika Yahoo Gagal) ---
+    # --- JALUR 2: KRAKEN API ---
     if df.empty or len(df) < 15:
         try:
             tf_kraken = 1 if interval == "M1" else 5
@@ -136,12 +138,11 @@ with pilih_col2:
     if st.button("🛡️ Mode M5 (Tren)", use_container_width=True):
         st.session_state.tf_aktif = "M5"
 
-# 4. Panel AI Live dengan Loading Bar Visual
+# 4. Panel AI Live dengan Loading Bar Paksa Refresh
 @st.fragment(run_every="60s")
 def ai_dual_dashboard():
     try:
         tf = st.session_state.tf_aktif
-        st.markdown(f"**AI Aktif:** Timeframe **{tf}** (Menganalisa probabilitas...)")
         
         c_price, c_atr, p_naik, p_turun = hitung_ai_multi(tf)
         
@@ -162,19 +163,25 @@ def ai_dual_dashboard():
         else:
             st.warning(f"⚪ **WAIT ({tf})** | Naik {p_naik:.1f}% vs Turun {p_turun:.1f}%.\n\nPasar konsolidasi di {tf}. Tunggu arah dominan.")
             
-        # Animasi Loading Bar CSS (Reset Otomatis Tiap 60 Detik)
-        st.markdown("""
-            <div style="margin-top: 10px; font-size: 0.85rem; color: #a1a1a1; text-align: right;">
-                ⏳ Menunggu sinkronisasi candle berikutnya...
+        # =========================================================
+        # ANIMASI LOADING BAR ANTI-MACET (DENGAN TIMESTAMP UNIK)
+        # =========================================================
+        waktu_sekarang = datetime.now(pytz.timezone('Asia/Makassar')).strftime("%H:%M:%S")
+        unik_id = int(time.time()) # Membuat ID unik setiap 60 detik agar CSS di-reset paksa
+        
+        st.markdown(f"""
+            <div style="margin-top: 10px; font-size: 0.85rem; color: #a1a1a1; display: flex; justify-content: space-between;">
+                <span>🔄 Terakhir update: <b>{waktu_sekarang} WITA</b></span>
+                <span>⏳ Memuat candle baru...</span>
             </div>
             <div style="width: 100%; background-color: #2b2b2b; border-radius: 4px; margin-top: 5px; overflow: hidden;">
-                <div style="height: 5px; background-color: #00d26a; animation: load60s 60s linear forwards;"></div>
+                <div style="height: 5px; background-color: #00d26a; animation: load60s_{unik_id} 60s linear forwards;"></div>
             </div>
             <style>
-                @keyframes load60s {
-                    0% { width: 0%; }
-                    100% { width: 100%; }
-                }
+                @keyframes load60s_{unik_id} {{
+                    0% {{ width: 0%; }}
+                    100% {{ width: 100%; }}
+                }}
             </style>
         """, unsafe_allow_html=True)
             

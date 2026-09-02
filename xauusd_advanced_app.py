@@ -51,7 +51,7 @@ def hitung_ai_multi(interval):
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
     }
     
-    # --- JALUR 1: DIRECT YAHOO API (Tanpa Modul Yfinance) ---
+    # --- JALUR 1: DIRECT YAHOO API ---
     try:
         tf_yahoo = "1m" if interval == "M1" else "5m"
         url_yahoo = f"https://query1.finance.yahoo.com/v8/finance/chart/XAUUSD=X?range=5d&interval={tf_yahoo}"
@@ -67,9 +67,9 @@ def hitung_ai_multi(interval):
             })
             df.dropna(inplace=True)
     except Exception:
-        pass # Lanjut ke jalur Kraken jika Yahoo gagal
+        pass 
 
-    # --- JALUR 2: KRAKEN API (Aman dari Blokir IP Amerika Streamlit) ---
+    # --- JALUR 2: KRAKEN API (Jika Yahoo Gagal) ---
     if df.empty or len(df) < 15:
         try:
             tf_kraken = 1 if interval == "M1" else 5
@@ -77,9 +77,8 @@ def hitung_ai_multi(interval):
             res_k = requests.get(url_kraken, headers=headers, timeout=5).json()
             
             if not res_k['error']:
-                pair_key = list(res_k['result'].keys())[0] # Mengambil key dinamis seperti 'PAXGUSD'
+                pair_key = list(res_k['result'].keys())[0] 
                 data_k = res_k['result'][pair_key]
-                # Kraken Format: [time, open, high, low, close, vwap, vol, count]
                 df = pd.DataFrame(data_k, columns=['time','Open','High','Low','Close','vwap','vol','count'])
                 df['Open'] = df['Open'].astype(float)
                 df['High'] = df['High'].astype(float)
@@ -94,7 +93,7 @@ def hitung_ai_multi(interval):
     if df.empty or len(df) < 15:
         raise ValueError(f"Berhasil terhubung, tapi data {interval} belum cukup terbentuk. Tunggu 1 menit.")
     
-    # --- PROSES MACHINE LEARNING XGBOOST ---
+    # --- PROSES MACHINE LEARNING ---
     df['Return'] = df['Close'].pct_change()
     df['Body'] = df['Close'] - df['Open']
     
@@ -124,7 +123,6 @@ def hitung_ai_multi(interval):
     
     return df['Close'].iloc[-1], df['ATR'].iloc[-1], proba[1]*100, proba[0]*100
 
-# Antarmuka Pengguna
 st.subheader("🤖 Pilih Timeframe Analisis AI")
 
 if 'tf_aktif' not in st.session_state:
@@ -138,12 +136,13 @@ with pilih_col2:
     if st.button("🛡️ Mode M5 (Tren)", use_container_width=True):
         st.session_state.tf_aktif = "M5"
 
-st.markdown(f"**AI Aktif:** Timeframe **{st.session_state.tf_aktif}** (Auto-Update tiap 60 Detik)")
-
+# 4. Panel AI Live dengan Loading Bar Visual
 @st.fragment(run_every="60s")
 def ai_dual_dashboard():
     try:
         tf = st.session_state.tf_aktif
+        st.markdown(f"**AI Aktif:** Timeframe **{tf}** (Menganalisa probabilitas...)")
+        
         c_price, c_atr, p_naik, p_turun = hitung_ai_multi(tf)
         
         pengali_tp = 1.2 if tf == "M1" else 1.8
@@ -155,12 +154,29 @@ def ai_dual_dashboard():
         batas_naik = c_price + jarak_tp
         batas_turun = c_price - jarak_tp
         
+        # Kotak Sinyal
         if p_naik >= 58.0:
             st.success(f"🟢 **BUY SCALP ({tf})** | Prob: **{p_naik:.1f}%** | Entry: **${c_price:.2f}**\n\n📈 **TP:** ${batas_naik:.2f} *(+${jarak_tp:.2f})* \n\n🛡️ **SL:** ${c_price - jarak_sl:.2f} *(-${jarak_sl:.2f})*")
         elif p_turun >= 58.0:
             st.error(f"🔴 **SELL SCALP ({tf})** | Prob: **{p_turun:.1f}%** | Entry: **${c_price:.2f}**\n\n📉 **TP:** ${batas_turun:.2f} *(-${jarak_tp:.2f})* \n\n🛡️ **SL:** ${c_price + jarak_sl:.2f} *(+${jarak_sl:.2f})*")
         else:
             st.warning(f"⚪ **WAIT ({tf})** | Naik {p_naik:.1f}% vs Turun {p_turun:.1f}%.\n\nPasar konsolidasi di {tf}. Tunggu arah dominan.")
+            
+        # Animasi Loading Bar CSS (Reset Otomatis Tiap 60 Detik)
+        st.markdown("""
+            <div style="margin-top: 10px; font-size: 0.85rem; color: #a1a1a1; text-align: right;">
+                ⏳ Menunggu sinkronisasi candle berikutnya...
+            </div>
+            <div style="width: 100%; background-color: #2b2b2b; border-radius: 4px; margin-top: 5px; overflow: hidden;">
+                <div style="height: 5px; background-color: #00d26a; animation: load60s 60s linear forwards;"></div>
+            </div>
+            <style>
+                @keyframes load60s {
+                    0% { width: 0%; }
+                    100% { width: 100%; }
+                }
+            </style>
+        """, unsafe_allow_html=True)
             
     except Exception as e:
         st.error(f"Gagal memproses AI {st.session_state.tf_aktif}: {e}")

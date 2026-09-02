@@ -6,11 +6,12 @@ from xgboost import XGBClassifier
 import streamlit.components.v1 as components
 from datetime import datetime
 import pytz
+import requests  # <-- Modul baru untuk menyamar
 
-# Konfigurasi Halaman Khusus Mobile & Desktop
+# Konfigurasi Halaman
 st.set_page_config(page_title="XAU/USD M1 & M5 Scalper Pro", layout="wide", initial_sidebar_state="collapsed")
 
-# Suntikan CSS agar tampilan lebar penuh dan pas di Android
+# Suntikan CSS
 st.markdown("""
     <style>
     .block-container {
@@ -29,7 +30,7 @@ st.markdown("""
 
 st.title("XAU/USD - DUAL SCALPER AI (M1 & M5) ⚡")
 
-# 1. Panel Sesi Pasar WITA (Kalimantan)
+# 1. Panel Sesi Pasar WITA
 def get_market_session_wita():
     wita = pytz.timezone('Asia/Makassar')
     now_wita = datetime.now(wita)
@@ -43,18 +44,26 @@ def get_market_session_wita():
 waktu, sesi, karakter = get_market_session_wita()
 st.info(f"🕒 **{waktu}** | **{sesi}**\n\n💡 {karakter}")
 
-# 2. Fungsi AI Dinamis (Cache Diubah ke 60 Detik Agar Aman dari Blokir Yahoo)
+# 2. Fungsi AI Dinamis dengan PENYAMARAN (User-Agent)
 @st.cache_data(ttl=60)
 def hitung_ai_multi(interval):
     tf_map = {"M1": "1m", "M5": "5m"}
     period_map = {"M1": "5d", "M5": "1mo"}
     
-    gold = yf.download("XAUUSD=X", period=period_map[interval], interval=tf_map[interval], progress=False)
+    # --- TRIK PENYAMARAN KE YAHOO FINANCE ---
+    session = requests.Session()
+    # Menyamar sebagai Google Chrome di Windows 10 agar tidak diblokir
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    })
+    # -----------------------------------------
+
+    gold = yf.download("XAUUSD=X", period=period_map[interval], interval=tf_map[interval], session=session, progress=False)
     
     if gold.empty:
-        gold = yf.download("GC=F", period=period_map[interval], interval=tf_map[interval], progress=False)
+        gold = yf.download("GC=F", period=period_map[interval], interval=tf_map[interval], session=session, progress=False)
     if gold.empty:
-        raise ValueError(f"Yahoo Finance membatasi data {interval}. Silakan tunggu 1 menit lagi.")
+        raise ValueError(f"Yahoo Finance masih memblokir data {interval}. Coba ganti timeframe atau tunggu sebentar.")
 
     df = pd.DataFrame(index=gold.index)
     df['Close'] = gold['Close']
@@ -66,7 +75,6 @@ def hitung_ai_multi(interval):
     df['Return'] = df['Close'].pct_change()
     df['Body'] = df['Close'] - df['Open']
     
-    # Penyesuaian jendela indikator berdasarkan timeframe
     window_size = 10 if interval == "M1" else 14
     
     df['SMA'] = df['Close'].rolling(window=window_size).mean()
@@ -109,7 +117,7 @@ with pilih_col2:
 
 st.markdown(f"**AI Aktif:** Timeframe **{st.session_state.tf_aktif}** (Auto-Update tiap pergantian candle)")
 
-# 4. Panel AI Live (Refresh diubah ke 60 Detik Agar Sinkron dengan Candle M1)
+# 4. Panel AI Live
 @st.fragment(run_every="60s")
 def ai_dual_dashboard():
     try:
@@ -141,10 +149,6 @@ st.markdown("---")
 
 st.subheader("📊 Grafik Live (OANDA)")
 
-# ==========================================
-# PENGATURAN UKURAN GRAFIK 
-# ==========================================
-# Tinggi 500 pixel sangat ideal untuk HP Android agar tidak terlalu memakan layar
 TINGGI_GRAFIK = 500  
 
 tradingview_html = """

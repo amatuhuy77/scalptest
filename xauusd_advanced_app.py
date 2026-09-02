@@ -7,8 +7,10 @@ import streamlit.components.v1 as components
 from datetime import datetime
 import pytz
 
+# Konfigurasi Halaman Khusus Mobile & Desktop
 st.set_page_config(page_title="XAU/USD M1 & M5 Scalper Pro", layout="wide", initial_sidebar_state="collapsed")
 
+# Suntikan CSS agar tampilan lebar penuh dan pas di Android
 st.markdown("""
     <style>
     .block-container {
@@ -27,6 +29,7 @@ st.markdown("""
 
 st.title("XAU/USD - DUAL SCALPER AI (M1 & M5) ⚡")
 
+# 1. Panel Sesi Pasar WITA (Kalimantan)
 def get_market_session_wita():
     wita = pytz.timezone('Asia/Makassar')
     now_wita = datetime.now(wita)
@@ -40,8 +43,8 @@ def get_market_session_wita():
 waktu, sesi, karakter = get_market_session_wita()
 st.info(f"🕒 **{waktu}** | **{sesi}**\n\n💡 {karakter}")
 
-# Fungsi AI Dinamis untuk M1 atau M5
-@st.cache_data(ttl=5)
+# 2. Fungsi AI Dinamis (Cache Diubah ke 60 Detik Agar Aman dari Blokir Yahoo)
+@st.cache_data(ttl=60)
 def hitung_ai_multi(interval):
     tf_map = {"M1": "1m", "M5": "5m"}
     period_map = {"M1": "5d", "M5": "1mo"}
@@ -51,7 +54,7 @@ def hitung_ai_multi(interval):
     if gold.empty:
         gold = yf.download("GC=F", period=period_map[interval], interval=tf_map[interval], progress=False)
     if gold.empty:
-        raise ValueError(f"Yahoo Finance membatasi data {interval}. Coba beberapa saat lagi.")
+        raise ValueError(f"Yahoo Finance membatasi data {interval}. Silakan tunggu 1 menit lagi.")
 
     df = pd.DataFrame(index=gold.index)
     df['Close'] = gold['Close']
@@ -63,6 +66,7 @@ def hitung_ai_multi(interval):
     df['Return'] = df['Close'].pct_change()
     df['Body'] = df['Close'] - df['Open']
     
+    # Penyesuaian jendela indikator berdasarkan timeframe
     window_size = 10 if interval == "M1" else 14
     
     df['SMA'] = df['Close'].rolling(window=window_size).mean()
@@ -89,6 +93,7 @@ def hitung_ai_multi(interval):
     
     return df['Close'].iloc[-1], df['ATR'].iloc[-1], proba[1]*100, proba[0]*100
 
+# 3. Tombol Pilihan Timeframe
 st.subheader("🤖 Pilih Timeframe Analisis AI")
 
 if 'tf_aktif' not in st.session_state:
@@ -102,9 +107,10 @@ with pilih_col2:
     if st.button("🛡️ Mode M5 (Tren)", use_container_width=True):
         st.session_state.tf_aktif = "M5"
 
-st.markdown(f"**AI Aktif:** Timeframe **{st.session_state.tf_aktif}** (Auto-Update 5 Detik)")
+st.markdown(f"**AI Aktif:** Timeframe **{st.session_state.tf_aktif}** (Auto-Update tiap pergantian candle)")
 
-@st.fragment(run_every="5s")
+# 4. Panel AI Live (Refresh diubah ke 60 Detik Agar Sinkron dengan Candle M1)
+@st.fragment(run_every="60s")
 def ai_dual_dashboard():
     try:
         tf = st.session_state.tf_aktif
@@ -136,10 +142,10 @@ st.markdown("---")
 st.subheader("📊 Grafik Live (OANDA)")
 
 # ==========================================
-# PENGATURAN UKURAN GRAFIK (PANJANG & LEBAR)
+# PENGATURAN UKURAN GRAFIK 
 # ==========================================
-TINGGI_GRAFIK = 900  # Ubah angka ini jika ingin lebih panjang atau pendek ke bawah
-LEBAR_GRAFIK = "100%" # Ubah ukuran lebar jika diinginkan
+# Tinggi 500 pixel sangat ideal untuk HP Android agar tidak terlalu memakan layar
+TINGGI_GRAFIK = 500  
 
 tradingview_html = """
 <!-- TradingView Widget BEGIN -->

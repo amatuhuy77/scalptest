@@ -1,5 +1,4 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
 from xgboost import XGBClassifier
@@ -8,7 +7,6 @@ from datetime import datetime
 import pytz
 import requests
 
-# Konfigurasi Halaman Khusus Mobile
 st.set_page_config(page_title="XAU/USD M1 & M5 Scalper Pro", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -43,44 +41,60 @@ waktu, sesi, karakter = get_market_session_wita()
 st.info(f"🕒 **{waktu}** | **{sesi}**\n\n💡 {karakter}")
 
 # =========================================================================
-# FUNGSI AI DENGAN JALUR BELAKANG (BINANCE PAXG - KEMBARAN EMAS ANTI BLOKIR)
+# MESIN PENGAMBIL DATA TANGGUH (Direct Yahoo + Kraken API Fallback)
 # =========================================================================
 @st.cache_data(ttl=60)
 def hitung_ai_multi(interval):
-    tf_map = {"M1": "1m", "M5": "5m"}
     df = pd.DataFrame()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    }
     
-    # 1. Coba jalur normal Yahoo Finance
+    # --- JALUR 1: DIRECT YAHOO API (Tanpa Modul Yfinance) ---
     try:
-        gold = yf.download("XAUUSD=X", period="1d", interval=tf_map[interval], progress=False)
-        if not gold.empty and len(gold) > 15:
-            df = pd.DataFrame(index=gold.index)
-            df['Close'] = gold['Close']
-            df['Open'] = gold['Open']
-            df['High'] = gold['High']
-            df['Low'] = gold['Low']
-    except:
-        pass
+        tf_yahoo = "1m" if interval == "M1" else "5m"
+        url_yahoo = f"https://query1.finance.yahoo.com/v8/finance/chart/XAUUSD=X?range=5d&interval={tf_yahoo}"
+        res_y = requests.get(url_yahoo, headers=headers, timeout=5).json()
         
-    # 2. Jika Yahoo ngambek/blokir, AI otomatis pindah ke jalur belakang (Binance API)
+        if 'chart' in res_y and res_y['chart']['result']:
+            quote = res_y['chart']['result'][0]['indicators']['quote'][0]
+            df = pd.DataFrame({
+                'Open': quote['open'],
+                'High': quote['high'],
+                'Low': quote['low'],
+                'Close': quote['close']
+            })
+            df.dropna(inplace=True)
+    except Exception:
+        pass # Lanjut ke jalur Kraken jika Yahoo gagal
+
+    # --- JALUR 2: KRAKEN API (Aman dari Blokir IP Amerika Streamlit) ---
     if df.empty or len(df) < 15:
         try:
-            url = f"https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval={tf_map[interval]}&limit=500"
-            res = requests.get(url).json()
-            if isinstance(res, list) and len(res) > 0:
-                df = pd.DataFrame(res, columns=['time','Open','High','Low','Close','vol','ct','qav','nt','tbbav','tbqav','ignore'])
+            tf_kraken = 1 if interval == "M1" else 5
+            url_kraken = f"https://api.kraken.com/0/public/OHLC?pair=PAXGUSD&interval={tf_kraken}"
+            res_k = requests.get(url_kraken, headers=headers, timeout=5).json()
+            
+            if not res_k['error']:
+                pair_key = list(res_k['result'].keys())[0] # Mengambil key dinamis seperti 'PAXGUSD'
+                data_k = res_k['result'][pair_key]
+                # Kraken Format: [time, open, high, low, close, vwap, vol, count]
+                df = pd.DataFrame(data_k, columns=['time','Open','High','Low','Close','vwap','vol','count'])
                 df['Open'] = df['Open'].astype(float)
                 df['High'] = df['High'].astype(float)
                 df['Low'] = df['Low'].astype(float)
                 df['Close'] = df['Close'].astype(float)
+                df.dropna(inplace=True)
             else:
-                raise ValueError("Gagal mengambil data kembaran emas.")
+                raise ValueError("Kraken menolak request.")
         except Exception as e:
-            raise ValueError(f"Semua jalur data terputus. Mohon refresh web. Error: {e}")
+            raise ValueError(f"Server diblokir total. Gagal terhubung ke Yahoo maupun Kraken. Error: {e}")
 
-    df.dropna(inplace=True)
+    if df.empty or len(df) < 15:
+        raise ValueError(f"Berhasil terhubung, tapi data {interval} belum cukup terbentuk. Tunggu 1 menit.")
     
-    # Kalkulasi Indikator
+    # --- PROSES MACHINE LEARNING XGBOOST ---
     df['Return'] = df['Close'].pct_change()
     df['Body'] = df['Close'] - df['Open']
     
@@ -99,9 +113,8 @@ def hitung_ai_multi(interval):
     df.dropna(inplace=True)
     
     if len(df) < 15: 
-        raise ValueError(f"Data belum terkumpul sempurna.")
+        raise ValueError("Data indikator belum siap. Refresh web.")
     
-    # Proses Machine Learning
     features = ['Return', 'Body', 'BB_Width', 'ATR']
     model = XGBClassifier(n_estimators=60, learning_rate=0.12, max_depth=3, random_state=42)
     model.fit(df[features][:-1], df['Target'][:-1])
@@ -111,6 +124,7 @@ def hitung_ai_multi(interval):
     
     return df['Close'].iloc[-1], df['ATR'].iloc[-1], proba[1]*100, proba[0]*100
 
+# Antarmuka Pengguna
 st.subheader("🤖 Pilih Timeframe Analisis AI")
 
 if 'tf_aktif' not in st.session_state:
@@ -124,7 +138,7 @@ with pilih_col2:
     if st.button("🛡️ Mode M5 (Tren)", use_container_width=True):
         st.session_state.tf_aktif = "M5"
 
-st.markdown(f"**AI Aktif:** Timeframe **{st.session_state.tf_aktif}** (Auto-Update tiap pergantian candle)")
+st.markdown(f"**AI Aktif:** Timeframe **{st.session_state.tf_aktif}** (Auto-Update tiap 60 Detik)")
 
 @st.fragment(run_every="60s")
 def ai_dual_dashboard():

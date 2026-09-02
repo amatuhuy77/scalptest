@@ -6,12 +6,11 @@ from xgboost import XGBClassifier
 import streamlit.components.v1 as components
 from datetime import datetime
 import pytz
-import requests  # <-- Modul baru untuk menyamar
+import requests
 
-# Konfigurasi Halaman
+# Konfigurasi Halaman Khusus Mobile
 st.set_page_config(page_title="XAU/USD M1 & M5 Scalper Pro", layout="wide", initial_sidebar_state="collapsed")
 
-# Suntikan CSS
 st.markdown("""
     <style>
     .block-container {
@@ -30,7 +29,6 @@ st.markdown("""
 
 st.title("XAU/USD - DUAL SCALPER AI (M1 & M5) ⚡")
 
-# 1. Panel Sesi Pasar WITA
 def get_market_session_wita():
     wita = pytz.timezone('Asia/Makassar')
     now_wita = datetime.now(wita)
@@ -44,34 +42,45 @@ def get_market_session_wita():
 waktu, sesi, karakter = get_market_session_wita()
 st.info(f"🕒 **{waktu}** | **{sesi}**\n\n💡 {karakter}")
 
-# 2. Fungsi AI Dinamis dengan PENYAMARAN (User-Agent)
+# =========================================================================
+# FUNGSI AI DENGAN JALUR BELAKANG (BINANCE PAXG - KEMBARAN EMAS ANTI BLOKIR)
+# =========================================================================
 @st.cache_data(ttl=60)
 def hitung_ai_multi(interval):
     tf_map = {"M1": "1m", "M5": "5m"}
-    period_map = {"M1": "5d", "M5": "1mo"}
+    df = pd.DataFrame()
     
-    # --- TRIK PENYAMARAN KE YAHOO FINANCE ---
-    session = requests.Session()
-    # Menyamar sebagai Google Chrome di Windows 10 agar tidak diblokir
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    })
-    # -----------------------------------------
+    # 1. Coba jalur normal Yahoo Finance
+    try:
+        gold = yf.download("XAUUSD=X", period="1d", interval=tf_map[interval], progress=False)
+        if not gold.empty and len(gold) > 15:
+            df = pd.DataFrame(index=gold.index)
+            df['Close'] = gold['Close']
+            df['Open'] = gold['Open']
+            df['High'] = gold['High']
+            df['Low'] = gold['Low']
+    except:
+        pass
+        
+    # 2. Jika Yahoo ngambek/blokir, AI otomatis pindah ke jalur belakang (Binance API)
+    if df.empty or len(df) < 15:
+        try:
+            url = f"https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval={tf_map[interval]}&limit=500"
+            res = requests.get(url).json()
+            if isinstance(res, list) and len(res) > 0:
+                df = pd.DataFrame(res, columns=['time','Open','High','Low','Close','vol','ct','qav','nt','tbbav','tbqav','ignore'])
+                df['Open'] = df['Open'].astype(float)
+                df['High'] = df['High'].astype(float)
+                df['Low'] = df['Low'].astype(float)
+                df['Close'] = df['Close'].astype(float)
+            else:
+                raise ValueError("Gagal mengambil data kembaran emas.")
+        except Exception as e:
+            raise ValueError(f"Semua jalur data terputus. Mohon refresh web. Error: {e}")
 
-    gold = yf.download("XAUUSD=X", period=period_map[interval], interval=tf_map[interval], session=session, progress=False)
-    
-    if gold.empty:
-        gold = yf.download("GC=F", period=period_map[interval], interval=tf_map[interval], session=session, progress=False)
-    if gold.empty:
-        raise ValueError(f"Yahoo Finance masih memblokir data {interval}. Coba ganti timeframe atau tunggu sebentar.")
-
-    df = pd.DataFrame(index=gold.index)
-    df['Close'] = gold['Close']
-    df['Open'] = gold['Open']
-    df['High'] = gold['High']
-    df['Low'] = gold['Low']
     df.dropna(inplace=True)
     
+    # Kalkulasi Indikator
     df['Return'] = df['Close'].pct_change()
     df['Body'] = df['Close'] - df['Open']
     
@@ -90,8 +99,9 @@ def hitung_ai_multi(interval):
     df.dropna(inplace=True)
     
     if len(df) < 15: 
-        raise ValueError(f"Data {interval} terkumpul hanya {len(df)} baris. Belum cukup.")
+        raise ValueError(f"Data belum terkumpul sempurna.")
     
+    # Proses Machine Learning
     features = ['Return', 'Body', 'BB_Width', 'ATR']
     model = XGBClassifier(n_estimators=60, learning_rate=0.12, max_depth=3, random_state=42)
     model.fit(df[features][:-1], df['Target'][:-1])
@@ -101,7 +111,6 @@ def hitung_ai_multi(interval):
     
     return df['Close'].iloc[-1], df['ATR'].iloc[-1], proba[1]*100, proba[0]*100
 
-# 3. Tombol Pilihan Timeframe
 st.subheader("🤖 Pilih Timeframe Analisis AI")
 
 if 'tf_aktif' not in st.session_state:
@@ -117,7 +126,6 @@ with pilih_col2:
 
 st.markdown(f"**AI Aktif:** Timeframe **{st.session_state.tf_aktif}** (Auto-Update tiap pergantian candle)")
 
-# 4. Panel AI Live
 @st.fragment(run_every="60s")
 def ai_dual_dashboard():
     try:

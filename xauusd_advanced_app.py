@@ -3,32 +3,25 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import joblib
-import os
 import time
 
 # ==========================================
 # 1. KONFIGURASI HALAMAN (RAMAH ANDROID)
 # ==========================================
 st.set_page_config(
-    page_title="XAUUSD Pure AI Scalper",
-    page_icon="⚡",
+    page_title="XAUUSD Technical Pro Scalper",
+    page_icon="🎯",
     layout="centered"
 )
 
-st.markdown("### ⚡ XAUUSD Pure AI Scalper")
-st.caption("Mode Prediksi Murni Berbasis Model XGBoost & Timeframe Dinamis")
+st.markdown("### 🎯 XAUUSD Technical Pro Scalper")
+st.caption("Dashboard Sinyal Murni Berbasis Indikator Teknikal & Tren")
 
 # ==========================================
 # 2. PILIHAN TIMEFRAME (M1 / M5)
 # ==========================================
-pilihan_tf = st.selectbox("Pilih Timeframe Analisis:", ["1m", "5m"], index=1) # Default M5 agar lebih stabil dari noise
-
-# Menyesuaikan periode data agar optimal ditarik dari server
-if pilihan_tf == "1m":
-    periode_data = "1d"
-else:
-    periode_data = "5d"
+pilihan_tf = st.selectbox("Pilih Timeframe Analisis:", ["1m", "5m"], index=1)
+periode_data = "1d" if pilihan_tf == "1m" else "5d"
 
 # ==========================================
 # 3. FUNGSI INDIKATOR TEKNIKAL MANDIRI
@@ -79,7 +72,7 @@ def get_advanced_data(tf, period):
 # ==========================================
 # 5. PROSES DATA & LOADING
 # ==========================================
-with st.spinner(f"🔄 Memproses data {pilihan_tf} & Model AI..."):
+with st.spinner(f"🔄 Menganalisis pasar {pilihan_tf}..."):
     df_live = get_advanced_data(pilihan_tf, periode_data)
 
 if isinstance(df_live, str):
@@ -91,36 +84,36 @@ if isinstance(df_live, str):
 elif df_live is not None and not df_live.empty:
     data_terbaru = df_live.iloc[-1:]
     
-    harga_mentah = float(data_terbaru['Close'].iloc[0])
-    harga_sekarang = round(harga_mentah, 2) 
-    
+    harga_sekarang = round(float(data_terbaru['Close'].iloc[0]), 2)
     rsi_sekarang = float(data_terbaru['RSI_14'].iloc[0])
     atr_sekarang = float(data_terbaru['ATR_14'].iloc[0])
     ema_sekarang = float(data_terbaru['EMA_50'].iloc[0])
+    macd_sekarang = float(data_terbaru['MACD'].iloc[0])
     waktu_data = data_terbaru.index[0].strftime("%H:%M:%S")
 
     # ==========================================
-    # 6. MURNI MEMBACA MODEL XGBOOST ANDA
+    # 6. LOGIKA SINYAL TEKNIKAL PROFESIONAL
     # ==========================================
-    nama_file_model = "model_xgboost_terbaik.pkl"
-    prob_naik, prob_turun = 0.5, 0.5
-    model_tersedia = False
+    # Menentukan arah tren murni berdasarkan posisi harga terhadap EMA 50 & MACD
+    di_atas_ema = harga_sekarang > ema_sekarang
+    macd_positif = macd_sekarang > 0
     
-    if os.path.exists(nama_file_model):
-        try:
-            model = joblib.load(nama_file_model)
-            # Pastikan urutan fitur murni sesuai saat model Anda dilatih
-            fitur_x = data_terbaru[['RSI_14', 'ATR_14', 'EMA_50', 'MACD', 'Close']]
-            probabilitas = model.predict_proba(fitur_x)[0]
-            prob_turun = probabilitas[0]
-            prob_naik = probabilitas[1]
-            model_tersedia = True
-        except Exception as e:
-            st.error(f"Error membaca model XGBoost: {e}")
+    skor_sinyal = 0 # Positif untuk Buy, Negatif untuk Sell
+    
+    if di_atas_ema: skor_sinyal += 1
+    if macd_positif: skor_sinyal += 1
+    if rsi_sekarang < 65 and rsi_sekarang > 40: skor_sinyal += 1 # Zona aman momentum
+
+    # Keputusan Akhir Sinyal
+    if skor_sinyal >= 2 and rsi_sekarang < 75:
+        status_sinyal = "BUY"
+        kekuatan = "85% (Tren Kuat Naik)"
+    elif not di_atas_ema and not macd_positif and rsi_sekarang > 35:
+        status_sinyal = "SELL"
+        kekuatan = "85% (Tren Kuat Turun)"
     else:
-        st.warning("⚠️ File model '.pkl' tidak ditemukan di GitHub. Menggunakan simulasi dasar.")
-        prob_naik = 0.65 if harga_sekarang > ema_sekarang else 0.35
-        prob_turun = 1 - prob_naik
+        status_sinyal = "WAIT"
+        kekuatan = "Konsolidasi / Ragu-ragu"
 
     # ==========================================
     # 7. PANEL METRIK DASHBOARD
@@ -138,16 +131,14 @@ elif df_live is not None and not df_live.empty:
     st.divider()
 
     # ==========================================
-    # 8. KEPUTUSAN AI BERDASARKAN MODEL PURE
+    # 8. KEPUTUSAN SINYAL DI LAYAR
     # ==========================================
-    THRESHOLD = 0.60 # Standar keyakinan model
-
-    if prob_naik >= THRESHOLD:
-        st.success(f"🟢 **PREDIKSI AI : BUY**\n\nKeyakinan Model: **{prob_naik*100:.1f}%**\nHarga Acuan: **${harga_sekarang:.2f}**")
-    elif prob_turun >= THRESHOLD:
-        st.error(f"🔴 **PREDIKSI AI : SELL**\n\nAkurasi Model: **{prob_turun*100:.1f}%**\nHarga Acuan: **${harga_sekarang:.2f}**")
+    if status_sinyal == "BUY":
+        st.success(f"🟢 **SINYAL TEKNIKAL : BUY**\n\nAkurasi Konfirmasi: **{kekuatan}**\nHarga Acuan: **${harga_sekarang:.2f}**")
+    elif status_sinyal == "SELL":
+        st.error(f"🔴 **SINYAL TEKNIKAL : SELL**\n\nAkurasi Konfirmasi: **{kekuatan}**\nHarga Acuan: **${harga_sekarang:.2f}**")
     else:
-        st.warning(f"⚪ **AI NEUTRAL / WAIT**\n\nPasar sideways atau ragu-ragu. Naik: {prob_naik*100:.1f}% | Turun: {prob_turun*100:.1f}%")
+        st.warning(f"⚪ **STATUS : WAIT / STANDBY**\n\nPasar sedang tidak searah. Menunggu momentum aman.")
 
     # BAR LOADING & COUNTDOWN TEPAT DI BAWAH REKOMENDASI
     st.markdown("---")

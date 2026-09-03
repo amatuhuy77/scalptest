@@ -17,7 +17,7 @@ st.set_page_config(
 )
 
 st.title("📈 XAUUSD Live AI Scalper (1-Minute Ultra Fast)")
-st.markdown("Sistem Analisis Real-Time dengan Auto-Refresh & Data Mutakhir")
+st.markdown("Sistem Analisis Real-Time dengan Auto-Refresh & Bar Loading")
 
 # ==========================================
 # 2. FUNGSI INDIKATOR MANDIRI
@@ -46,11 +46,9 @@ def hitung_indikator_mandiri(df):
 # ==========================================
 # 3. FUNGSI PENGAMBILAN DATA (1 MENIT LIVE)
 # ==========================================
-# Cache dipercepat jadi 10 detik agar datanya sangat segar
 @st.cache_data(ttl=10)
 def get_advanced_data():
     try:
-        # MENGGUNAKAN INTERVAL 1 MENIT (1m) agar harga akurat dengan detik ini
         df = yf.download(tickers="XAUUSD=X", period="1d", interval="1m", progress=False)
         if df.empty:
             df = yf.download(tickers="GC=F", period="1d", interval="1m", progress=False)
@@ -70,7 +68,6 @@ def get_advanced_data():
 # ==========================================
 # 4. PROSES DATA DENGAN ANIMASI LOADING
 # ==========================================
-# Ini akan memunculkan icon loading (spinner) saat sistem mengambil harga
 with st.spinner("🔄 Mengambil harga emas terbaru..."):
     df_live = get_advanced_data()
 
@@ -112,7 +109,7 @@ elif df_live is not None and not df_live.empty:
     # ==========================================
     # 6. PANEL METRIK DASHBOARD
     # ==========================================
-    st.write(f"⏱️ *Update Terakhir: {waktu_data} (Data di-refresh tiap 10 detik)*")
+    st.write(f"⏱️ *Update Terakhir: {waktu_data}*")
     
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("📌 Entry Sekarang", f"${harga_sekarang:.2f}")
@@ -161,12 +158,22 @@ elif df_live is not None and not df_live.empty:
     st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# 8. SISTEM AUTO-REFRESH (PENTING!)
+# 8. BAR LOADING & AUTO-REFRESH 10 DETIK
 # ==========================================
-# Menunggu 10 detik, lalu memutar ulang/refresh seluruh halaman otomatis
-time.sleep(10)
+st.write("---")
+st.write("⏳ *Menuju penyegaran data pasar berikutnya...*")
+
+# Membuat elemen progress bar kosong di antarmuka web
+bar_loading = st.progress(0)
+
+# Menghitung mundur selama 10 detik sambil mengisi bar loading secara mulus
+for i in range(10):
+    time.sleep(1)
+    # Mengisi bar persentase dari 0 hingga 100%
+    bar_loading.progress((i + 1) * 10)
+
+# Setelah 10 detik penuh, web memuat ulang otomatis
 try:
     st.rerun()
 except AttributeError:
-    # Untuk dukungan Streamlit versi agak lama
     st.experimental_rerun()

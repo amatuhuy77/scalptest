@@ -1,6 +1,6 @@
 streamlit
 pandas
-pandas-ta
+pandas_ta
 yfinance
 plotly
 scikit-learn

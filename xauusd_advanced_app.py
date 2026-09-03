@@ -8,16 +8,16 @@ import os
 import time
 
 # ==========================================
-# 1. KONFIGURASI HALAMAN WEB
+# 1. KONFIGURASI HALAMAN (RAMAH ANDROID)
 # ==========================================
 st.set_page_config(
-    page_title="XAUUSD Live AI Scalper",
+    page_title="XAUUSD AI Scalper Mobile",
     page_icon="📈",
-    layout="wide"
+    layout="centered" # Menggunakan centered agar sangat rapi di layar HP Android
 )
 
-st.title("📈 XAUUSD Live AI Scalper (1-Minute Ultra Fast)")
-st.markdown("Sistem Analisis Real-Time dengan Auto-Refresh & Bar Loading")
+st.markdown("### 📈 XAUUSD AI Scalper (Valetax/Finex)")
+st.caption("Sistem Analisis Real-Time & Mobile Friendly")
 
 # ==========================================
 # 2. FUNGSI INDIKATOR MANDIRI
@@ -68,19 +68,22 @@ def get_advanced_data():
 # ==========================================
 # 4. PROSES DATA DENGAN ANIMASI LOADING
 # ==========================================
-with st.spinner("🔄 Mengambil harga emas terbaru..."):
+with st.spinner("🔄 Sinkronisasi harga pasar..."):
     df_live = get_advanced_data()
 
 if isinstance(df_live, str):
     if df_live == "KOSONG":
-        st.warning("⚠️ Menunggu data dari pasar global...")
+        st.warning("⚠️ Menunggu data dari server global...")
     else:
         st.error(f"🚨 Kendala sistem: {df_live}")
         
 elif df_live is not None and not df_live.empty:
     data_terbaru = df_live.iloc[-1:]
     
-    harga_sekarang = float(data_terbaru['Close'].iloc[0])
+    # Penyesuaian presisi harga agar setara dengan standar XAUUSD.vxc
+    harga_mentah = float(data_terbaru['Close'].iloc[0])
+    harga_sekarang = round(harga_mentah, 2) 
+    
     rsi_sekarang = float(data_terbaru['RSI_14'].iloc[0])
     atr_sekarang = float(data_terbaru['ATR_14'].iloc[0])
     ema_sekarang = float(data_terbaru['EMA_50'].iloc[0])
@@ -107,31 +110,47 @@ elif df_live is not None and not df_live.empty:
         prob_turun = 1 - prob_naik
 
     # ==========================================
-    # 6. PANEL METRIK DASHBOARD
+    # 6. PANEL METRIK DASHBOARD (RESPONSIF HP)
     # ==========================================
-    st.write(f"⏱️ *Update Terakhir: {waktu_data}*")
+    st.text(f"⏱️ Update: {waktu_data}")
     
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("📌 Entry Sekarang", f"${harga_sekarang:.2f}")
-    col2.metric("📊 RSI (Momentum)", f"{rsi_sekarang:.1f}")
-    col3.metric("📈 ATR (Volatilitas)", f"{atr_sekarang:.2f}")
-    col4.metric("🎯 EMA 50 (Tren)", f"${ema_sekarang:.2f}")
+    # Menggunakan 2 kolom agar nyaman dilihat di layar HP Android
+    c1, c2 = st.columns(2)
+    c1.metric("📌 Entry (XAUUSD)", f"${harga_sekarang:.2f}")
+    c2.metric("📊 RSI", f"{rsi_sekarang:.1f}")
+    
+    c3, c4 = st.columns(2)
+    c3.metric("📈 ATR", f"{atr_sekarang:.2f}")
+    c4.metric("🎯 EMA 50", f"${ema_sekarang:.2f}")
     
     st.divider()
 
-    # Panel Keputusan AI
+    # ==========================================
+    # 7. PANEL KEPUTUSAN AI & BAR LOADING DI BAWAHNYA
+    # ==========================================
     if prob_naik >= 0.60:
-        st.success(f"### 🟢 REKOMENDASI AI : BUY!\n**Akurasi Prediksi: {prob_naik*100:.1f}%** | Bersiap scalping NAIK dari harga **${harga_sekarang:.2f}**")
+        st.success(f"🟢 **REKOMENDASI AI : BUY!**\n\nAkurasi: **{prob_naik*100:.1f}%**\nEntry: **${harga_sekarang:.2f}**")
     elif prob_turun >= 0.60:
-        st.error(f"### 🔴 REKOMENDASI AI : SELL!\n**Akurasi Prediksi: {prob_turun*100:.1f}%** | Bersiap scalping TURUN dari harga **${harga_sekarang:.2f}**")
+        st.error(f"🔴 **REKOMENDASI AI : SELL!**\n\nAkurasi: **{prob_turun*100:.1f}%**\nEntry: **${harga_sekarang:.2f}**")
     else:
-        st.warning(f"### ⚪ AI STANDBY\nMenunggu momentum. Prediksi Naik: {prob_naik*100:.1f}% vs Turun: {prob_turun*100:.1f}%.")
+        st.warning(f"⚪ **AI STANDBY**\n\nMenunggu momentum. Naik: {prob_naik*100:.1f}% | Turun: {prob_turun*100:.1f}%")
+
+    # BAR LOADING & COUNTDOWN DITARIK TEPAT DI BAWAH PERKIRAAN AI
+    st.markdown("---")
+    info_refresh = st.empty()
+    bar_loading = st.progress(0)
+
+    for i in range(10):
+        sisa_waktu = 10 - i
+        info_refresh.caption(f"⏳ Refresh otomatis dalam {sisa_waktu} detik...")
+        bar_loading.progress((i + 1) * 10)
+        time.sleep(1)
 
     # ==========================================
-    # 7. GRAFIK CANDLESTICK INTERAKTIF
+    # 8. GRAFIK CANDLESTICK (MOBILE FRIENDLY)
     # ==========================================
-    st.subheader("Visualisasi Market (50 Menit Terakhir - Live 1M)")
-    df_chart = df_live.tail(50).copy()
+    st.subheader("Grafik M1")
+    df_chart = df_live.tail(30).copy() # Ditampilkan 30 candle agar pas di layar HP
     
     fig = go.Figure(data=[go.Candlestick(
         x=df_chart.index,
@@ -145,34 +164,21 @@ elif df_live is not None and not df_live.empty:
     fig.add_trace(go.Scatter(
         x=df_chart.index, 
         y=df_chart['EMA_50'], 
-        line=dict(color='blue', width=1.5), 
+        line=dict(color='cyan', width=1.5), 
         name='EMA 50'
     ))
 
     fig.update_layout(
         xaxis_rangeslider_visible=False,
         template="plotly_dark",
-        height=500,
-        margin=dict(l=0, r=0, t=30, b=0)
+        height=350, # Dibuat lebih ringkas agar tidak terlalu panjang discroll di HP
+        margin=dict(l=0, r=0, t=20, b=0)
     )
     st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# 8. BAR LOADING & AUTO-REFRESH 10 DETIK
+# 9. EKsekusi RERUN OTOMATIS
 # ==========================================
-st.write("---")
-st.write("⏳ *Menuju penyegaran data pasar berikutnya...*")
-
-# Membuat elemen progress bar kosong di antarmuka web
-bar_loading = st.progress(0)
-
-# Menghitung mundur selama 10 detik sambil mengisi bar loading secara mulus
-for i in range(10):
-    time.sleep(1)
-    # Mengisi bar persentase dari 0 hingga 100%
-    bar_loading.progress((i + 1) * 10)
-
-# Setelah 10 detik penuh, web memuat ulang otomatis
 try:
     st.rerun()
 except AttributeError:

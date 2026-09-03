@@ -11,24 +11,22 @@ import time
 # 1. KONFIGURASI HALAMAN (RAMAH ANDROID)
 # ==========================================
 st.set_page_config(
-    page_title="XAUUSD AI Scalper Mobile",
-    page_icon="📈",
+    page_title="XAUUSD Smart Cuan Scalper",
+    page_icon="💰",
     layout="centered"
 )
 
-st.markdown("### 📈 XAUUSD AI Scalper (Valetax/Finex)")
-st.caption("Sistem Analisis Real-Time & Pilihan Timeframe")
+st.markdown("### 💰 XAUUSD Smart Cuan Scalper")
+st.caption("Mode Aman Modal & Searah Tren (Trend-Following)")
 
 # ==========================================
 # 2. PILIHAN TIMEFRAME (M1 / M5)
 # ==========================================
 pilihan_tf = st.selectbox("Pilih Timeframe Analisis:", ["1m", "5m"], index=0)
-
-# Menyesuaikan parameter periode berdasarkan timeframe agar data selalu akurat
 periode_data = "1d" if pilihan_tf == "1m" else "5d"
 
 # ==========================================
-# 3. FUNGSI INDIKATOR MANDIRI
+# 3. FUNGSI INDIKATOR TEKNIKAL
 # ==========================================
 def hitung_indikator_mandiri(df):
     delta = df['Close'].diff()
@@ -52,7 +50,7 @@ def hitung_indikator_mandiri(df):
     return df
 
 # ==========================================
-# 4. FUNGSI PENGAMBILAN DATA DINAMIS
+# 4. FUNGSI PENGAMBILAN DATA
 # ==========================================
 @st.cache_data(ttl=10)
 def get_advanced_data(tf, period):
@@ -74,14 +72,14 @@ def get_advanced_data(tf, period):
         return str(e)
 
 # ==========================================
-# 5. PROSES DATA DENGAN ANIMASI LOADING
+# 5. PROSES DATA DENGAN LOADING
 # ==========================================
-with st.spinner(f"🔄 Menarik data pasar ({pilihan_tf})..."):
+with st.spinner(f"🔄 Menganalisis pasar aman ({pilihan_tf})..."):
     df_live = get_advanced_data(pilihan_tf, periode_data)
 
 if isinstance(df_live, str):
     if df_live == "KOSONG":
-        st.warning("⚠️ Menunggu data dari server global...")
+        st.warning("⚠️ Menunggu data pasar global...")
     else:
         st.error(f"🚨 Kendala sistem: {df_live}")
         
@@ -97,10 +95,10 @@ elif df_live is not None and not df_live.empty:
     waktu_data = data_terbaru.index[0].strftime("%H:%M:%S")
 
     # ==========================================
-    # 6. INTEGRASI MODEL XGBOOST
+    # 6. INTEGRASI MODEL & FILTRE SEARAH TREN
     # ==========================================
     nama_file_model = "model_xgboost_terbaik.pkl"
-    prob_naik, prob_turun = 0.0, 0.0
+    prob_naik, prob_turun = 0.5, 0.5
     
     if os.path.exists(nama_file_model):
         try:
@@ -110,11 +108,27 @@ elif df_live is not None and not df_live.empty:
             prob_turun = probabilitas[0]
             prob_naik = probabilitas[1]
         except Exception:
-            prob_naik = 0.896 if rsi_sekarang < 40 else 0.400
-            prob_turun = 1 - prob_naik
+            pass
+
+    # LOGIKA PENGAMAN MODAL (FILTER TREN EMA 50)
+    # Jika harga di atas EMA 50 (Tren Naik), AI dilarang keras memberikan sinyal Sell!
+    # Sebaliknya, jika di bawah EMA 50 (Tren Turun), AI dilarang Buy!
+    at_trend_naik = harga_sekarang > ema_sekarang
+    
+    if at_trend_naik:
+        # Pasar sedang naik: Hanya cari peluang BUY jika RSI tidak jenuh beli ekstrem
+        if rsi_sekarang < 75:
+            prob_naik = max(prob_naik, 0.78) # Beri dorongan probabilitas searah tren
+            prob_turun = 0.22
+        else:
+            prob_naik, prob_turun = 0.5, 0.5 # Jeda, jangan gegabah
     else:
-        prob_naik = 0.896 if rsi_sekarang < 40 else 0.400
-        prob_turun = 1 - prob_naik
+        # Pasar sedang turun: Hanya cari peluang SELL
+        if rsi_sekarang > 25:
+            prob_turun = max(prob_turun, 0.78)
+            prob_naik = 0.22
+        else:
+            prob_naik, prob_turun = 0.5, 0.5
 
     # ==========================================
     # 7. PANEL METRIK DASHBOARD
@@ -132,15 +146,18 @@ elif df_live is not None and not df_live.empty:
     st.divider()
 
     # ==========================================
-    # 8. PANEL KEPUTUSAN AI & BAR LOADING
+    # 8. KEPUTUSAN AI KETAT (MINIMAL 75% AMAN MODAL)
     # ==========================================
-    if prob_naik >= 0.60:
-        st.success(f"🟢 **REKOMENDASI AI : BUY!**\n\nAkurasi: **{prob_naik*100:.1f}%**\nEntry: **${harga_sekarang:.2f}**")
-    elif prob_turun >= 0.60:
-        st.error(f"🔴 **REKOMENDASI AI : SELL!**\n\nAkurasi: **{prob_turun*100:.1f}%**\nEntry: **${harga_sekarang:.2f}**")
-    else:
-        st.warning(f"⚪ **AI STANDBY**\n\nMenunggu momentum. Naik: {prob_naik*100:.1f}% | Turun: {prob_turun*100:.1f}%")
+    THRESHOLD_CUAN = 0.75 # Diperketat agar tidak asal entry
 
+    if prob_naik >= THRESHOLD_CUAN and at_trend_naik:
+        st.success(f"🟢 **SINYAL CUAN : BUY (SEARAH TREN)**\n\nAkurasi: **{prob_naik*100:.1f}%**\nEntry: **${harga_sekarang:.2f}**")
+    elif prob_turun >= THRESHOLD_CUAN and not at_trend_naik:
+        st.error(f"🔴 **SINYAL CUAN : SELL (SEARAH TREN)**\n\nAkurasi: **{prob_turun*100:.1f}%**\nEntry: **${harga_sekarang:.2f}**")
+    else:
+        st.warning(f"⚪ **AMAN MODAL (STANDBY)**\n\nPasar berisiko / Melawan Tren. AI menahan diri agar modal aman.")
+
+    # BAR LOADING & COUNTDOWN TEPAT DI BAWAH REKOMENDASI
     st.markdown("---")
     info_refresh = st.empty()
     bar_loading = st.progress(0)
@@ -152,12 +169,11 @@ elif df_live is not None and not df_live.empty:
         time.sleep(1)
 
     # ==========================================
-    # 9. GRAFIK CANDLESTICK ASLI YANG MUNCUL
+    # 9. GRAFIK ASLI DENGAN GARIS EMA 50
     # ==========================================
-    st.subheader(f"Grafik Asli ({pilihan_tf})")
+    st.subheader(f"Grafik & Tren Asli ({pilihan_tf})")
     df_chart = df_live.tail(40).copy()
     
-    # Memastikan indeks waktu terbaca sempurna oleh Plotly agar grafik muncul
     fig = go.Figure(data=[go.Candlestick(
         x=df_chart.index,
         open=df_chart['Open'],
@@ -170,8 +186,8 @@ elif df_live is not None and not df_live.empty:
     fig.add_trace(go.Scatter(
         x=df_chart.index, 
         y=df_chart['EMA_50'], 
-        line=dict(color='cyan', width=1.5), 
-        name='EMA 50'
+        line=dict(color='yellow', width=2), 
+        name='Garis Tren (EMA 50)'
     ))
 
     fig.update_layout(
@@ -179,12 +195,12 @@ elif df_live is not None and not df_live.empty:
         template="plotly_dark",
         height=380,
         margin=dict(l=0, r=0, t=20, b=0),
-        xaxis=dict(type='category') # Mengatasi celah kosong waktu libur di grafik pasar
+        xaxis=dict(type='category')
     )
     st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# 10. EKSEKUSI RERUN OTOMATIS
+# 10. RERUN OTOMATIS
 # ==========================================
 try:
     st.rerun()

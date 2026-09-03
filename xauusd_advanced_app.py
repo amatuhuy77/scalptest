@@ -11,22 +11,27 @@ import time
 # 1. KONFIGURASI HALAMAN (RAMAH ANDROID)
 # ==========================================
 st.set_page_config(
-    page_title="XAUUSD Smart Cuan Scalper",
-    page_icon="💰",
+    page_title="XAUUSD Pure AI Scalper",
+    page_icon="⚡",
     layout="centered"
 )
 
-st.markdown("### 💰 XAUUSD Smart Cuan Scalper")
-st.caption("Mode Aman Modal & Searah Tren (Trend-Following)")
+st.markdown("### ⚡ XAUUSD Pure AI Scalper")
+st.caption("Mode Prediksi Murni Berbasis Model XGBoost & Timeframe Dinamis")
 
 # ==========================================
 # 2. PILIHAN TIMEFRAME (M1 / M5)
 # ==========================================
-pilihan_tf = st.selectbox("Pilih Timeframe Analisis:", ["1m", "5m"], index=0)
-periode_data = "1d" if pilihan_tf == "1m" else "5d"
+pilihan_tf = st.selectbox("Pilih Timeframe Analisis:", ["1m", "5m"], index=1) # Default M5 agar lebih stabil dari noise
+
+# Menyesuaikan periode data agar optimal ditarik dari server
+if pilihan_tf == "1m":
+    periode_data = "1d"
+else:
+    periode_data = "5d"
 
 # ==========================================
-# 3. FUNGSI INDIKATOR TEKNIKAL
+# 3. FUNGSI INDIKATOR TEKNIKAL MANDIRI
 # ==========================================
 def hitung_indikator_mandiri(df):
     delta = df['Close'].diff()
@@ -72,9 +77,9 @@ def get_advanced_data(tf, period):
         return str(e)
 
 # ==========================================
-# 5. PROSES DATA DENGAN LOADING
+# 5. PROSES DATA & LOADING
 # ==========================================
-with st.spinner(f"🔄 Menganalisis pasar aman ({pilihan_tf})..."):
+with st.spinner(f"🔄 Memproses data {pilihan_tf} & Model AI..."):
     df_live = get_advanced_data(pilihan_tf, periode_data)
 
 if isinstance(df_live, str):
@@ -95,40 +100,27 @@ elif df_live is not None and not df_live.empty:
     waktu_data = data_terbaru.index[0].strftime("%H:%M:%S")
 
     # ==========================================
-    # 6. INTEGRASI MODEL & FILTRE SEARAH TREN
+    # 6. MURNI MEMBACA MODEL XGBOOST ANDA
     # ==========================================
     nama_file_model = "model_xgboost_terbaik.pkl"
     prob_naik, prob_turun = 0.5, 0.5
+    model_tersedia = False
     
     if os.path.exists(nama_file_model):
         try:
             model = joblib.load(nama_file_model)
+            # Pastikan urutan fitur murni sesuai saat model Anda dilatih
             fitur_x = data_terbaru[['RSI_14', 'ATR_14', 'EMA_50', 'MACD', 'Close']]
             probabilitas = model.predict_proba(fitur_x)[0]
             prob_turun = probabilitas[0]
             prob_naik = probabilitas[1]
-        except Exception:
-            pass
-
-    # LOGIKA PENGAMAN MODAL (FILTER TREN EMA 50)
-    # Jika harga di atas EMA 50 (Tren Naik), AI dilarang keras memberikan sinyal Sell!
-    # Sebaliknya, jika di bawah EMA 50 (Tren Turun), AI dilarang Buy!
-    at_trend_naik = harga_sekarang > ema_sekarang
-    
-    if at_trend_naik:
-        # Pasar sedang naik: Hanya cari peluang BUY jika RSI tidak jenuh beli ekstrem
-        if rsi_sekarang < 75:
-            prob_naik = max(prob_naik, 0.78) # Beri dorongan probabilitas searah tren
-            prob_turun = 0.22
-        else:
-            prob_naik, prob_turun = 0.5, 0.5 # Jeda, jangan gegabah
+            model_tersedia = True
+        except Exception as e:
+            st.error(f"Error membaca model XGBoost: {e}")
     else:
-        # Pasar sedang turun: Hanya cari peluang SELL
-        if rsi_sekarang > 25:
-            prob_turun = max(prob_turun, 0.78)
-            prob_naik = 0.22
-        else:
-            prob_naik, prob_turun = 0.5, 0.5
+        st.warning("⚠️ File model '.pkl' tidak ditemukan di GitHub. Menggunakan simulasi dasar.")
+        prob_naik = 0.65 if harga_sekarang > ema_sekarang else 0.35
+        prob_turun = 1 - prob_naik
 
     # ==========================================
     # 7. PANEL METRIK DASHBOARD
@@ -137,7 +129,7 @@ elif df_live is not None and not df_live.empty:
     
     c1, c2 = st.columns(2)
     c1.metric("📌 Entry (XAUUSD)", f"${harga_sekarang:.2f}")
-    c2.metric("📊 RSI", f"{rsi_sekarang:.1f}")
+    c2.metric("📊 RSI (14)", f"{rsi_sekarang:.1f}")
     
     c3, c4 = st.columns(2)
     c3.metric("📈 ATR", f"{atr_sekarang:.2f}")
@@ -146,16 +138,16 @@ elif df_live is not None and not df_live.empty:
     st.divider()
 
     # ==========================================
-    # 8. KEPUTUSAN AI KETAT (MINIMAL 75% AMAN MODAL)
+    # 8. KEPUTUSAN AI BERDASARKAN MODEL PURE
     # ==========================================
-    THRESHOLD_CUAN = 0.75 # Diperketat agar tidak asal entry
+    THRESHOLD = 0.60 # Standar keyakinan model
 
-    if prob_naik >= THRESHOLD_CUAN and at_trend_naik:
-        st.success(f"🟢 **SINYAL CUAN : BUY (SEARAH TREN)**\n\nAkurasi: **{prob_naik*100:.1f}%**\nEntry: **${harga_sekarang:.2f}**")
-    elif prob_turun >= THRESHOLD_CUAN and not at_trend_naik:
-        st.error(f"🔴 **SINYAL CUAN : SELL (SEARAH TREN)**\n\nAkurasi: **{prob_turun*100:.1f}%**\nEntry: **${harga_sekarang:.2f}**")
+    if prob_naik >= THRESHOLD:
+        st.success(f"🟢 **PREDIKSI AI : BUY**\n\nKeyakinan Model: **{prob_naik*100:.1f}%**\nHarga Acuan: **${harga_sekarang:.2f}**")
+    elif prob_turun >= THRESHOLD:
+        st.error(f"🔴 **PREDIKSI AI : SELL**\n\nAkurasi Model: **{prob_turun*100:.1f}%**\nHarga Acuan: **${harga_sekarang:.2f}**")
     else:
-        st.warning(f"⚪ **AMAN MODAL (STANDBY)**\n\nPasar berisiko / Melawan Tren. AI menahan diri agar modal aman.")
+        st.warning(f"⚪ **AI NEUTRAL / WAIT**\n\nPasar sideways atau ragu-ragu. Naik: {prob_naik*100:.1f}% | Turun: {prob_turun*100:.1f}%")
 
     # BAR LOADING & COUNTDOWN TEPAT DI BAWAH REKOMENDASI
     st.markdown("---")
@@ -169,9 +161,9 @@ elif df_live is not None and not df_live.empty:
         time.sleep(1)
 
     # ==========================================
-    # 9. GRAFIK ASLI DENGAN GARIS EMA 50
+    # 9. GRAFIK ASLI DENGAN EMA 50
     # ==========================================
-    st.subheader(f"Grafik & Tren Asli ({pilihan_tf})")
+    st.subheader(f"Grafik Candlestick ({pilihan_tf})")
     df_chart = df_live.tail(40).copy()
     
     fig = go.Figure(data=[go.Candlestick(
@@ -187,7 +179,7 @@ elif df_live is not None and not df_live.empty:
         x=df_chart.index, 
         y=df_chart['EMA_50'], 
         line=dict(color='yellow', width=2), 
-        name='Garis Tren (EMA 50)'
+        name='EMA 50'
     ))
 
     fig.update_layout(

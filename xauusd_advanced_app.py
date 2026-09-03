@@ -1,229 +1,145 @@
 import streamlit as st
+import yfinance as yf
 import pandas as pd
-import numpy as np
-from xgboost import XGBClassifier
-import streamlit.components.v1 as components
-from datetime import datetime
-import pytz
-import requests
-import time  # <-- Modul baru untuk mereset loading bar
+import pandas_ta as ta
+import plotly.graph_objects as go
+import joblib
+import os
 
-st.set_page_config(page_title="XAU/USD M1 & M5 Scalper Pro", layout="wide", initial_sidebar_state="collapsed")
+# ==========================================
+# 1. KONFIGURASI HALAMAN WEB
+# ==========================================
+st.set_page_config(
+    page_title="XAUUSD AI Scalper - Atma Fathul Hadi",
+    page_icon="📈",
+    layout="wide"
+)
 
-st.markdown("""
-    <style>
-    .block-container {
-        padding-top: 0.6rem !important;
-        padding-bottom: 0.6rem !important;
-        padding-left: 0.4rem !important;
-        padding-right: 0.4rem !important;
-        max-width: 100% !important;
-    }
-    @media (max-width: 768px) {
-        h1 { font-size: 1.4rem !important; }
-        h3 { font-size: 1rem !important; }
-    }
-    </style>
-""", unsafe_allow_html=True)
+st.title("📈 XAUUSD Advanced AI Scalper")
+st.markdown("Sistem Analisis Real-Time berbasis XGBoost & Indikator Teknikal")
 
-st.title("XAU/USD - DUAL SCALPER AI (M1 & M5) ⚡")
-
-def get_market_session_wita():
-    wita = pytz.timezone('Asia/Makassar')
-    now_wita = datetime.now(wita)
-    jam = now_wita.hour
-    waktu_str = f"{jam:02d}:{now_wita.minute:02d} WITA"
-    
-    if 6 <= jam < 14: return waktu_str, "Sesi Asia 🌏", "Range Sempit (Fokus M1/M5 Aman)"
-    elif 14 <= jam < 20: return waktu_str, "Sesi London 🌍", "Breakout Kuat (Hati-hati Lonjakan)"
-    else: return waktu_str, "Sesi New York 🌎", "Sangat Volatil (Gunakan SL Ketat)"
-
-waktu, sesi, karakter = get_market_session_wita()
-st.info(f"🕒 **{waktu}** | **{sesi}**\n\n💡 {karakter}")
-
-# =========================================================================
-# MESIN PENGAMBIL DATA TANGGUH 
-# (Cache diturunkan ke 30s agar selalu dapat data baru tiap refresh 60s)
-# =========================================================================
-@st.cache_data(ttl=30)
-def hitung_ai_multi(interval):
-    df = pd.DataFrame()
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-    }
-    
-    # --- JALUR 1: DIRECT YAHOO API ---
+# ==========================================
+# 2. FUNGSI PENGAMBILAN & PENGOLAHAN DATA
+# ==========================================
+@st.cache_data(ttl=60) # Data otomatis refresh setiap 60 detik
+def get_advanced_data():
     try:
-        tf_yahoo = "1m" if interval == "M1" else "5m"
-        url_yahoo = f"https://query1.finance.yahoo.com/v8/finance/chart/XAUUSD=X?range=5d&interval={tf_yahoo}"
-        res_y = requests.get(url_yahoo, headers=headers, timeout=5).json()
+        # Menarik data Emas M5 (Timeframe 5 Menit) dari server global
+        df = yf.download(tickers="XAUUSD=X", period="5d", interval="5m", progress=False)
         
-        if 'chart' in res_y and res_y['chart']['result']:
-            quote = res_y['chart']['result'][0]['indicators']['quote'][0]
-            df = pd.DataFrame({
-                'Open': quote['open'],
-                'High': quote['high'],
-                'Low': quote['low'],
-                'Close': quote['close']
-            })
-            df.dropna(inplace=True)
-    except Exception:
-        pass 
-
-    # --- JALUR 2: KRAKEN API ---
-    if df.empty or len(df) < 15:
-        try:
-            tf_kraken = 1 if interval == "M1" else 5
-            url_kraken = f"https://api.kraken.com/0/public/OHLC?pair=PAXGUSD&interval={tf_kraken}"
-            res_k = requests.get(url_kraken, headers=headers, timeout=5).json()
+        if df.empty:
+            return None
             
-            if not res_k['error']:
-                pair_key = list(res_k['result'].keys())[0] 
-                data_k = res_k['result'][pair_key]
-                df = pd.DataFrame(data_k, columns=['time','Open','High','Low','Close','vwap','vol','count'])
-                df['Open'] = df['Open'].astype(float)
-                df['High'] = df['High'].astype(float)
-                df['Low'] = df['Low'].astype(float)
-                df['Close'] = df['Close'].astype(float)
-                df.dropna(inplace=True)
-            else:
-                raise ValueError("Kraken menolak request.")
-        except Exception as e:
-            raise ValueError(f"Server diblokir total. Gagal terhubung ke Yahoo maupun Kraken. Error: {e}")
-
-    if df.empty or len(df) < 15:
-        raise ValueError(f"Berhasil terhubung, tapi data {interval} belum cukup terbentuk. Tunggu 1 menit.")
-    
-    # --- PROSES MACHINE LEARNING ---
-    df['Return'] = df['Close'].pct_change()
-    df['Body'] = df['Close'] - df['Open']
-    
-    window_size = 10 if interval == "M1" else 14
-    
-    df['SMA'] = df['Close'].rolling(window=window_size).mean()
-    df['Std_Dev'] = df['Close'].rolling(window=window_size).std()
-    df['BB_Width'] = (df['SMA'] + (df['Std_Dev'] * 2)) - (df['SMA'] - (df['Std_Dev'] * 2))
-    
-    df['TR'] = np.maximum(df['High'] - df['Low'], 
-                          np.maximum(abs(df['High'] - df['Close'].shift(1)), 
-                                     abs(df['Low'] - df['Close'].shift(1))))
-    df['ATR'] = df['TR'].rolling(window=window_size).mean()
-    
-    df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
-    df.dropna(inplace=True)
-    
-    if len(df) < 15: 
-        raise ValueError("Data indikator belum siap. Refresh web.")
-    
-    features = ['Return', 'Body', 'BB_Width', 'ATR']
-    model = XGBClassifier(n_estimators=60, learning_rate=0.12, max_depth=3, random_state=42)
-    model.fit(df[features][:-1], df['Target'][:-1])
-    
-    latest_data = df[features].tail(1)
-    proba = model.predict_proba(latest_data)[0]
-    
-    return df['Close'].iloc[-1], df['ATR'].iloc[-1], proba[1]*100, proba[0]*100
-
-st.subheader("🤖 Pilih Timeframe Analisis AI")
-
-if 'tf_aktif' not in st.session_state:
-    st.session_state.tf_aktif = "M1"
-
-pilih_col1, pilih_col2 = st.columns(2)
-with pilih_col1:
-    if st.button("⚡ Mode M1 (Cepat)", use_container_width=True):
-        st.session_state.tf_aktif = "M1"
-with pilih_col2:
-    if st.button("🛡️ Mode M5 (Tren)", use_container_width=True):
-        st.session_state.tf_aktif = "M5"
-
-# 4. Panel AI Live dengan Loading Bar Paksa Refresh
-@st.fragment(run_every="60s")
-def ai_dual_dashboard():
-    try:
-        tf = st.session_state.tf_aktif
-        
-        c_price, c_atr, p_naik, p_turun = hitung_ai_multi(tf)
-        
-        pengali_tp = 1.2 if tf == "M1" else 1.8
-        pengali_sl = 0.9 if tf == "M1" else 1.2
-        
-        jarak_tp = c_atr * pengali_tp
-        jarak_sl = c_atr * pengali_sl
-        
-        batas_naik = c_price + jarak_tp
-        batas_turun = c_price - jarak_tp
-        
-        # Kotak Sinyal
-        if p_naik >= 58.0:
-            st.success(f"🟢 **BUY SCALP ({tf})** | Prob: **{p_naik:.1f}%** | Entry: **${c_price:.2f}**\n\n📈 **TP:** ${batas_naik:.2f} *(+${jarak_tp:.2f})* \n\n🛡️ **SL:** ${c_price - jarak_sl:.2f} *(-${jarak_sl:.2f})*")
-        elif p_turun >= 58.0:
-            st.error(f"🔴 **SELL SCALP ({tf})** | Prob: **{p_turun:.1f}%** | Entry: **${c_price:.2f}**\n\n📉 **TP:** ${batas_turun:.2f} *(-${jarak_tp:.2f})* \n\n🛡️ **SL:** ${c_price + jarak_sl:.2f} *(+${jarak_sl:.2f})*")
-        else:
-            st.warning(f"⚪ **WAIT ({tf})** | Naik {p_naik:.1f}% vs Turun {p_turun:.1f}%.\n\nPasar konsolidasi di {tf}. Tunggu arah dominan.")
+        # Perbaiki format kolom jika menggunakan yfinance versi terbaru
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(1)
             
-        # =========================================================
-        # ANIMASI LOADING BAR ANTI-MACET (DENGAN TIMESTAMP UNIK)
-        # =========================================================
-        waktu_sekarang = datetime.now(pytz.timezone('Asia/Makassar')).strftime("%H:%M:%S")
-        unik_id = int(time.time()) # Membuat ID unik setiap 60 detik agar CSS di-reset paksa
+        # FEATURE ENGINEERING (Mempertajam Panca Indera AI)
+        df['RSI_14'] = df.ta.rsi(length=14)
+        df['ATR_14'] = df.ta.atr(length=14)
+        df['EMA_50'] = df.ta.ema(length=50)
         
-        st.markdown(f"""
-            <div style="margin-top: 10px; font-size: 0.85rem; color: #a1a1a1; display: flex; justify-content: space-between;">
-                <span>🔄 Terakhir update: <b>{waktu_sekarang} WITA</b></span>
-                <span>⏳ Memuat candle baru...</span>
-            </div>
-            <div style="width: 100%; background-color: #2b2b2b; border-radius: 4px; margin-top: 5px; overflow: hidden;">
-                <div style="height: 5px; background-color: #00d26a; animation: load60s_{unik_id} 60s linear forwards;"></div>
-            </div>
-            <style>
-                @keyframes load60s_{unik_id} {{
-                    0% {{ width: 0%; }}
-                    100% {{ width: 100%; }}
-                }}
-            </style>
-        """, unsafe_allow_html=True)
-            
+        # MACD menghasilkan 3 kolom, kita ambil garis utamanya saja
+        macd = df.ta.macd(fast=12, slow=26, signal=9)
+        df['MACD'] = macd['MACD_12_26_9']
+        
+        # Bersihkan data awal yang kosong akibat perhitungan indikator
+        df.dropna(inplace=True)
+        return df
     except Exception as e:
-        st.error(f"Gagal memproses AI {st.session_state.tf_aktif}: {e}")
+        st.error(f"Gagal mengambil data dari server: {e}")
+        return None
 
-ai_dual_dashboard()
+# ==========================================
+# 3. PROSES DATA REAL-TIME
+# ==========================================
+df_live = get_advanced_data()
 
-st.markdown("---")
+if df_live is not None and not df_live.empty:
+    # Ambil baris paling akhir (Harga detik ini)
+    data_terbaru = df_live.iloc[-1:]
+    
+    harga_sekarang = float(data_terbaru['Close'].iloc[0])
+    rsi_sekarang = float(data_terbaru['RSI_14'].iloc[0])
+    atr_sekarang = float(data_terbaru['ATR_14'].iloc[0])
+    ema_sekarang = float(data_terbaru['EMA_50'].iloc[0])
 
-st.subheader("📊 Grafik Live (OANDA)")
+    # ==========================================
+    # 4. INTEGRASI MODEL XGBOOST
+    # ==========================================
+    nama_file_model = "model_xgboost_terbaik.pkl" # Pastikan nama file ini ada di GitHub Anda
+    prob_naik, prob_turun = 0.0, 0.0
+    
+    if os.path.exists(nama_file_model):
+        try:
+            model = joblib.load(nama_file_model)
+            # Pastikan urutan fitur sama persis dengan saat model dilatih!
+            fitur_x = data_terbaru[['RSI_14', 'ATR_14', 'EMA_50', 'MACD', 'Close']]
+            probabilitas = model.predict_proba(fitur_x)[0]
+            prob_turun = probabilitas[0]
+            prob_naik = probabilitas[1]
+            st.toast("✅ Model XGBoost berhasil dimuat!", icon="🧠")
+        except Exception as e:
+            st.error(f"Terjadi kesalahan saat membaca model: {e}")
+    else:
+        st.warning(f"⚠️ File '{nama_file_model}' tidak ditemukan di repositori. Menampilkan mode simulasi.")
+        # Mode simulasi (Hapus jika model sudah diunggah)
+        prob_naik = 0.896 if rsi_sekarang < 40 else 0.400
+        prob_turun = 1 - prob_naik
 
-TINGGI_GRAFIK = 500  
+    # ==========================================
+    # 5. ANTARMUKA WEB (DASHBOARD)
+    # ==========================================
+    # Baris Metrik Utama
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📌 Entry Sekarang", f"${harga_sekarang:.2f}")
+    col2.metric("📊 RSI (Momentum)", f"{rsi_sekarang:.1f}")
+    col3.metric("📈 ATR (Volatilitas)", f"{atr_sekarang:.2f}")
+    col4.metric("🎯 EMA 50 (Tren)", f"${ema_sekarang:.2f}")
+    
+    st.divider()
 
-tradingview_html = """
-<!-- TradingView Widget BEGIN -->
-<div class="tradingview-widget-container" style="height:100%; width:100%;">
-  <div id="tradingview_xauusd" style="height:100%; width:100%;"></div>
-  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <script type="text/javascript">
-  new TradingView.widget(
-  {
-  "autosize": true,
-  "symbol": "OANDA:XAUUSD",
-  "interval": "1",
-  "timezone": "Asia/Makassar",
-  "theme": "dark",
-  "style": "1",
-  "locale": "id",
-  "enable_publishing": false,
-  "backgroundColor": "#0e1117",
-  "gridColor": "#222629",
-  "hide_top_toolbar": false,
-  "hide_legend": false,
-  "save_image": false,
-  "container_id": "tradingview_xauusd",
-  "toolbar_bg": "#0e1117"
-}
-  );
-  </script>
-</div>
-<!-- TradingView Widget END -->
-"""
+    # Panel Keputusan AI
+    if prob_naik >= 0.60:
+        st.success(f"### 🟢 REKOMENDASI AI : BUY!\n**Akurasi Prediksi: {prob_naik*100:.1f}%** | Bersiap untuk scalping naik dari harga **${harga_sekarang:.2f}**")
+    elif prob_turun >= 0.60:
+        st.error(f"### 🔴 REKOMENDASI AI : SELL!\n**Akurasi Prediksi: {prob_turun*100:.1f}%** | Bersiap untuk scalping turun dari harga **${harga_sekarang:.2f}**")
+    else:
+        st.info(f"### ⚪ AI STANDBY\nTidak ada sinyal kuat. Prediksi Naik: {prob_naik*100:.1f}% vs Turun: {prob_turun*100:.1f}%.")
 
-components.html(tradingview_html, height=TINGGI_GRAFIK)
+    # ==========================================
+    # 6. GRAFIK CANDLESTICK INTERAKTIF (PLOTLY)
+    # ==========================================
+    st.subheader("Visualisasi Market (5 Menit Terakhir)")
+    
+    # Menampilkan 50 candle terakhir agar grafik bersih
+    df_chart = df_live.tail(50).copy()
+    
+    fig = go.Figure(data=[go.Candlestick(
+        x=df_chart.index,
+        open=df_chart['Open'],
+        high=df_chart['High'],
+        low=df_chart['Low'],
+        close=df_chart['Close'],
+        name="XAUUSD"
+    )])
+    
+    # Menambahkan garis EMA 50 ke dalam grafik
+    fig.add_trace(go.Scatter(
+        x=df_chart.index, 
+        y=df_chart['EMA_50'], 
+        line=dict(color='blue', width=1.5), 
+        name='EMA 50'
+    ))
+
+    fig.update_layout(
+        xaxis_rangeslider_visible=False,
+        template="plotly_dark",
+        height=500,
+        margin=dict(l=0, r=0, t=30, b=0)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+else:
+    st.spinner("Mengunduh data pasar real-time...")

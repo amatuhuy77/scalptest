@@ -13,14 +13,22 @@ import time
 st.set_page_config(
     page_title="XAUUSD AI Scalper Mobile",
     page_icon="📈",
-    layout="centered" # Menggunakan centered agar sangat rapi di layar HP Android
+    layout="centered"
 )
 
 st.markdown("### 📈 XAUUSD AI Scalper (Valetax/Finex)")
-st.caption("Sistem Analisis Real-Time & Mobile Friendly")
+st.caption("Sistem Analisis Real-Time & Pilihan Timeframe")
 
 # ==========================================
-# 2. FUNGSI INDIKATOR MANDIRI
+# 2. PILIHAN TIMEFRAME (M1 / M5)
+# ==========================================
+pilihan_tf = st.selectbox("Pilih Timeframe Analisis:", ["1m", "5m"], index=0)
+
+# Menyesuaikan parameter periode berdasarkan timeframe agar data selalu akurat
+periode_data = "1d" if pilihan_tf == "1m" else "5d"
+
+# ==========================================
+# 3. FUNGSI INDIKATOR MANDIRI
 # ==========================================
 def hitung_indikator_mandiri(df):
     delta = df['Close'].diff()
@@ -44,14 +52,14 @@ def hitung_indikator_mandiri(df):
     return df
 
 # ==========================================
-# 3. FUNGSI PENGAMBILAN DATA (1 MENIT LIVE)
+# 4. FUNGSI PENGAMBILAN DATA DINAMIS
 # ==========================================
 @st.cache_data(ttl=10)
-def get_advanced_data():
+def get_advanced_data(tf, period):
     try:
-        df = yf.download(tickers="XAUUSD=X", period="1d", interval="1m", progress=False)
+        df = yf.download(tickers="XAUUSD=X", period=period, interval=tf, progress=False)
         if df.empty:
-            df = yf.download(tickers="GC=F", period="1d", interval="1m", progress=False)
+            df = yf.download(tickers="GC=F", period=period, interval=tf, progress=False)
             
         if df.empty:
             return "KOSONG"
@@ -66,10 +74,10 @@ def get_advanced_data():
         return str(e)
 
 # ==========================================
-# 4. PROSES DATA DENGAN ANIMASI LOADING
+# 5. PROSES DATA DENGAN ANIMASI LOADING
 # ==========================================
-with st.spinner("🔄 Sinkronisasi harga pasar..."):
-    df_live = get_advanced_data()
+with st.spinner(f"🔄 Menarik data pasar ({pilihan_tf})..."):
+    df_live = get_advanced_data(pilihan_tf, periode_data)
 
 if isinstance(df_live, str):
     if df_live == "KOSONG":
@@ -80,7 +88,6 @@ if isinstance(df_live, str):
 elif df_live is not None and not df_live.empty:
     data_terbaru = df_live.iloc[-1:]
     
-    # Penyesuaian presisi harga agar setara dengan standar XAUUSD.vxc
     harga_mentah = float(data_terbaru['Close'].iloc[0])
     harga_sekarang = round(harga_mentah, 2) 
     
@@ -90,7 +97,7 @@ elif df_live is not None and not df_live.empty:
     waktu_data = data_terbaru.index[0].strftime("%H:%M:%S")
 
     # ==========================================
-    # 5. INTEGRASI MODEL XGBOOST
+    # 6. INTEGRASI MODEL XGBOOST
     # ==========================================
     nama_file_model = "model_xgboost_terbaik.pkl"
     prob_naik, prob_turun = 0.0, 0.0
@@ -110,11 +117,10 @@ elif df_live is not None and not df_live.empty:
         prob_turun = 1 - prob_naik
 
     # ==========================================
-    # 6. PANEL METRIK DASHBOARD (RESPONSIF HP)
+    # 7. PANEL METRIK DASHBOARD
     # ==========================================
-    st.text(f"⏱️ Update: {waktu_data}")
+    st.text(f"⏱️ Update ({pilihan_tf}): {waktu_data}")
     
-    # Menggunakan 2 kolom agar nyaman dilihat di layar HP Android
     c1, c2 = st.columns(2)
     c1.metric("📌 Entry (XAUUSD)", f"${harga_sekarang:.2f}")
     c2.metric("📊 RSI", f"{rsi_sekarang:.1f}")
@@ -126,7 +132,7 @@ elif df_live is not None and not df_live.empty:
     st.divider()
 
     # ==========================================
-    # 7. PANEL KEPUTUSAN AI & BAR LOADING DI BAWAHNYA
+    # 8. PANEL KEPUTUSAN AI & BAR LOADING
     # ==========================================
     if prob_naik >= 0.60:
         st.success(f"🟢 **REKOMENDASI AI : BUY!**\n\nAkurasi: **{prob_naik*100:.1f}%**\nEntry: **${harga_sekarang:.2f}**")
@@ -135,7 +141,6 @@ elif df_live is not None and not df_live.empty:
     else:
         st.warning(f"⚪ **AI STANDBY**\n\nMenunggu momentum. Naik: {prob_naik*100:.1f}% | Turun: {prob_turun*100:.1f}%")
 
-    # BAR LOADING & COUNTDOWN DITARIK TEPAT DI BAWAH PERKIRAAN AI
     st.markdown("---")
     info_refresh = st.empty()
     bar_loading = st.progress(0)
@@ -147,11 +152,12 @@ elif df_live is not None and not df_live.empty:
         time.sleep(1)
 
     # ==========================================
-    # 8. GRAFIK CANDLESTICK (MOBILE FRIENDLY)
+    # 9. GRAFIK CANDLESTICK ASLI YANG MUNCUL
     # ==========================================
-    st.subheader("Grafik M1")
-    df_chart = df_live.tail(30).copy() # Ditampilkan 30 candle agar pas di layar HP
+    st.subheader(f"Grafik Asli ({pilihan_tf})")
+    df_chart = df_live.tail(40).copy()
     
+    # Memastikan indeks waktu terbaca sempurna oleh Plotly agar grafik muncul
     fig = go.Figure(data=[go.Candlestick(
         x=df_chart.index,
         open=df_chart['Open'],
@@ -171,13 +177,14 @@ elif df_live is not None and not df_live.empty:
     fig.update_layout(
         xaxis_rangeslider_visible=False,
         template="plotly_dark",
-        height=350, # Dibuat lebih ringkas agar tidak terlalu panjang discroll di HP
-        margin=dict(l=0, r=0, t=20, b=0)
+        height=380,
+        margin=dict(l=0, r=0, t=20, b=0),
+        xaxis=dict(type='category') # Mengatasi celah kosong waktu libur di grafik pasar
     )
     st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# 9. EKsekusi RERUN OTOMATIS
+# 10. EKSEKUSI RERUN OTOMATIS
 # ==========================================
 try:
     st.rerun()

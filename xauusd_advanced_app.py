@@ -19,25 +19,21 @@ st.title("📈 XAUUSD Advanced AI Scalper (Independent Version)")
 st.markdown("Sistem Analisis Real-Time berbasis XGBoost & Indikator Teknikal Internal")
 
 # ==========================================
-# 2. FUNGSI INDIKATOR MANDIRI (ANTI-ERROR)
+# 2. FUNGSI INDIKATOR MANDIRI
 # ==========================================
 def hitung_indikator_mandiri(df):
-    # Hitung RSI 14
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI_14'] = 100 - (100 / (1 + rs))
 
-    # Hitung EMA 50
     df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
 
-    # Hitung MACD
     ema12 = df['Close'].ewm(span=12, adjust=False).mean()
     ema26 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = ema12 - ema26
 
-    # Hitung ATR 14
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
@@ -47,34 +43,42 @@ def hitung_indikator_mandiri(df):
     return df
 
 # ==========================================
-# 3. FUNGSI PENGAMBILAN DATA
+# 3. FUNGSI PENGAMBILAN DATA (KEBAL ERROR)
 # ==========================================
 @st.cache_data(ttl=60)
 def get_advanced_data():
     try:
+        # Tarik data XAUUSD. Jika gagal/kosong, otomatis beralih ke GC=F (Emas Berjangka)
         df = yf.download(tickers="XAUUSD=X", period="5d", interval="5m", progress=False)
-        
         if df.empty:
-            return None
+            df = yf.download(tickers="GC=F", period="5d", interval="5m", progress=False)
             
+        if df.empty:
+            return "KOSONG"
+            
+        # Meratakan format kolom MultiIndex dari update yfinance terbaru
         if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.droplevel(1)
+            df.columns = [col[0] for col in df.columns]
             
-        # Panggil fungsi indikator manual
         df = hitung_indikator_mandiri(df)
         df.dropna(inplace=True)
-        
         return df
     except Exception as e:
-        st.error(f"Gagal mengambil data dari server: {e}")
-        return None
+        return str(e) # Kirim pesan error aslinya agar terbaca di layar
 
 # ==========================================
-# 4. PROSES DATA REAL-TIME
+# 4. PROSES DATA & RENDER DASHBOARD
 # ==========================================
 df_live = get_advanced_data()
 
-if df_live is not None and not df_live.empty:
+# Jika kembaliannya berupa teks (error/kosong), tampilkan peringatan di layar
+if isinstance(df_live, str):
+    if df_live == "KOSONG":
+        st.warning("⚠️ Yahoo Finance tidak mengembalikan data emas saat ini. Sedang mencoba ulang...")
+    else:
+        st.error(f"🚨 Terjadi kendala sistem penarikan data: {df_live}")
+        
+elif df_live is not None and not df_live.empty:
     data_terbaru = df_live.iloc[-1:]
     
     harga_sekarang = float(data_terbaru['Close'].iloc[0])
@@ -99,12 +103,12 @@ if df_live is not None and not df_live.empty:
         except Exception as e:
             st.error(f"Terjadi kesalahan saat membaca model: {e}")
     else:
-        st.warning(f"⚠️ File '{nama_file_model}' tidak ditemukan. Menampilkan mode simulasi.")
+        st.info(f"💡 Mode Simulasi Aktif (File '{nama_file_model}' belum diunggah).")
         prob_naik = 0.896 if rsi_sekarang < 40 else 0.400
         prob_turun = 1 - prob_naik
 
     # ==========================================
-    # 6. ANTARMUKA WEB (DASHBOARD)
+    # 6. TAMPILAN PANEL METRIK UTAMA
     # ==========================================
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("📌 Entry Sekarang", f"${harga_sekarang:.2f}")
@@ -114,17 +118,18 @@ if df_live is not None and not df_live.empty:
     
     st.divider()
 
+    # Panel Keputusan AI
     if prob_naik >= 0.60:
-        st.success(f"### 🟢 REKOMENDASI AI : BUY!\n**Akurasi Prediksi: {prob_naik*100:.1f}%** | Bersiap untuk scalping naik dari harga **${harga_sekarang:.2f}**")
+        st.success(f"### 🟢 REKOMENDASI AI : BUY!\n**Akurasi Prediksi: {prob_naik*100:.1f}%** | Bersiap scalping NAIK dari harga **${harga_sekarang:.2f}**")
     elif prob_turun >= 0.60:
-        st.error(f"### 🔴 REKOMENDASI AI : SELL!\n**Akurasi Prediksi: {prob_turun*100:.1f}%** | Bersiap untuk scalping turun dari harga **${harga_sekarang:.2f}**")
+        st.error(f"### 🔴 REKOMENDASI AI : SELL!\n**Akurasi Prediksi: {prob_turun*100:.1f}%** | Bersiap scalping TURUN dari harga **${harga_sekarang:.2f}**")
     else:
-        st.info(f"### ⚪ AI STANDBY\nTidak ada sinyal kuat. Prediksi Naik: {prob_naik*100:.1f}% vs Turun: {prob_turun*100:.1f}%.")
+        st.warning(f"### ⚪ AI STANDBY\nTidak ada sinyal kuat. Prediksi Naik: {prob_naik*100:.1f}% vs Turun: {prob_turun*100:.1f}%.")
 
     # ==========================================
     # 7. GRAFIK CANDLESTICK INTERAKTIF
     # ==========================================
-    st.subheader("Visualisasi Market (5 Menit Terakhir)")
+    st.subheader("Visualisasi Market (50 Candle Terakhir - M5)")
     df_chart = df_live.tail(50).copy()
     
     fig = go.Figure(data=[go.Candlestick(
@@ -152,4 +157,5 @@ if df_live is not None and not df_live.empty:
     st.plotly_chart(fig, use_container_width=True)
 
 else:
-    st.spinner("Mengunduh data pasar real-time...")
+    with st.spinner("Membangun ulang struktur data..."):
+        pass

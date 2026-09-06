@@ -18,10 +18,12 @@ st.markdown("### ⚡ XAUUSD Dynamic Scalper")
 st.caption("Mode Analisis Murni (Aman dari Blokir Server)")
 
 # ==========================================
-# 2. PILIHAN TIMEFRAME
+# 2. PILIHAN TIMEFRAME (PERBAIKAN SENIN PAGI)
 # ==========================================
-pilihan_tf = st.selectbox("Pilih Timeframe Analisis:", ["1m", "5m"], index=1)
-periode_data = "1d" if pilihan_tf == "1m" else "5d"
+pilihan_tf = st.selectbox("Pilih Timeframe Analisis:", ["1m", "5m"], index=0)
+
+# KUNCI PERBAIKAN: Selalu gunakan 5d (5 hari) agar M1 tidak kosong setelah libur akhir pekan
+periode_data = "5d" 
 
 # ==========================================
 # 3. FUNGSI INDIKATOR DINAMIS
@@ -51,7 +53,6 @@ def hitung_indikator_dinamis(df):
 # ==========================================
 # 4. PENGAMBILAN DATA (CACHE AMAN 30 DETIK)
 # ==========================================
-# Diubah ke 30 detik agar IP web tidak diblokir oleh Yahoo Finance karena spam
 @st.cache_data(ttl=30) 
 def get_dynamic_data(tf, period):
     try:
@@ -79,7 +80,7 @@ with st.spinner(f"🔄 Menarik aliran data pasar {pilihan_tf}..."):
 
 if isinstance(df_live, str):
     if df_live == "KOSONG":
-        st.warning("⚠️ Yahoo Finance sedang membatasi akses (Rate Limit). Tunggu sekitar 1-2 menit hingga blokir terbuka otomatis...")
+        st.warning("⚠️ Menunggu respons pasar atau blokir server (Rate Limit) terbuka. Tunggu sekitar 1 menit...")
     else:
         st.error(f"🚨 Kendala sistem: {df_live}")
         
@@ -152,20 +153,18 @@ elif df_live is not None and not df_live.empty:
     else:
         st.warning(f"⚪ **STATUS : WAIT / KONSOLIDASI**\n\nPasar sedang tipis. Naik: {prob_naik*100:.1f}% | Turun: {prob_turun*100:.1f}%")
 
-    # BAR LOADING & COUNTDOWN 30 DETIK (AMAN SERVER)
+    # BAR LOADING 30 DETIK
     st.markdown("---")
     info_refresh = st.empty()
     bar_loading = st.progress(0)
 
-    # Menghitung mundur dari 30
     for i in range(30):
         sisa_waktu = 30 - i
         info_refresh.caption(f"⏳ Refresh siklus aman dalam {sisa_waktu} detik...")
-        # Kalkulasi bar agar pas 100% di akhir (100 / 30 = 3.33)
         bar_loading.progress(int((i + 1) * 3.33))
         time.sleep(1)
         
-    bar_loading.progress(100) # Pastikan full di detik terakhir
+    bar_loading.progress(100)
 
     # ==========================================
     # 9. GRAFIK CANDLESTICK

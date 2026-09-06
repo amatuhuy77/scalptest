@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import time
 
 # ==========================================
-# 1. KONFIGURASI HALAMAN (RAMAH ANDROID)
+# 1. KONFIGURASI HALAMAN 
 # ==========================================
 st.set_page_config(
     page_title="XAUUSD Dynamic Scalper",
@@ -15,49 +15,44 @@ st.set_page_config(
 )
 
 st.markdown("### ⚡ XAUUSD Dynamic Scalper")
-st.caption("Mode Analisis Super Peka & Dinamis (Anti-Monoton)")
+st.caption("Mode Analisis Murni (Aman dari Blokir Server)")
 
 # ==========================================
-# 2. PILIHAN TIMEFRAME (M1 / M5)
+# 2. PILIHAN TIMEFRAME
 # ==========================================
 pilihan_tf = st.selectbox("Pilih Timeframe Analisis:", ["1m", "5m"], index=1)
 periode_data = "1d" if pilihan_tf == "1m" else "5d"
 
 # ==========================================
-# 3. FUNGSI INDIKATOR & DINAMIKA HARGA
+# 3. FUNGSI INDIKATOR DINAMIS
 # ==========================================
 def hitung_indikator_dinamis(df):
-    # Hitung RSI 14
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI_14'] = 100 - (100 / (1 + rs))
 
-    # Hitung EMA 50
     df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
 
-    # Hitung MACD
     ema12 = df['Close'].ewm(span=12, adjust=False).mean()
     ema26 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = ema12 - ema26
 
-    # Hitung ATR 14
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     df['ATR_14'] = tr.rolling(window=14).mean()
-
-    # TAMBAHAN: Menghitung selisih perubahan harga kilat (Velocity)
     df['Price_Change'] = df['Close'].diff()
 
     return df
 
 # ==========================================
-# 4. PENGAMBILAN DATA TANPA CACHE KAKU
+# 4. PENGAMBILAN DATA (CACHE AMAN 30 DETIK)
 # ==========================================
-@st.cache_data(ttl=5) # Cache dipercepat jadi 5 detik agar sangat responsif
+# Diubah ke 30 detik agar IP web tidak diblokir oleh Yahoo Finance karena spam
+@st.cache_data(ttl=30) 
 def get_dynamic_data(tf, period):
     try:
         df = yf.download(tickers="XAUUSD=X", period=period, interval=tf, progress=False)
@@ -77,14 +72,14 @@ def get_dynamic_data(tf, period):
         return str(e)
 
 # ==========================================
-# 5. PROSES DATA & LOADING
+# 5. PROSES DATA
 # ==========================================
-with st.spinner(f"🔄 Membaca pergerakan live {pilihan_tf}..."):
+with st.spinner(f"🔄 Menarik aliran data pasar {pilihan_tf}..."):
     df_live = get_dynamic_data(pilihan_tf, periode_data)
 
 if isinstance(df_live, str):
     if df_live == "KOSONG":
-        st.warning("⚠️ Menunggu data pasar global...")
+        st.warning("⚠️ Yahoo Finance sedang membatasi akses (Rate Limit). Tunggu sekitar 1-2 menit hingga blokir terbuka otomatis...")
     else:
         st.error(f"🚨 Kendala sistem: {df_live}")
         
@@ -99,35 +94,29 @@ elif df_live is not None and not df_live.empty:
     waktu_data = data_terbaru.index[0].strftime("%H:%M:%S")
 
     # ==========================================
-    # 6. LOGIKA PREDIKSI SUPER DINAMIS & PEKA
+    # 6. LOGIKA PREDIKSI DINAMIS
     # ==========================================
-    # Menggabungkan tren dasar dengan kecepatan perubahan harga detik ini
-    skor_dinamis = 50.0 # Titik tengah netral
+    skor_dinamis = 50.0 
     
-    # Faktor Tren EMA
     if harga_sekarang > ema_sekarang:
         skor_dinamis += 15.0
     else:
         skor_dinamis -= 15.0
         
-    # Faktor Kecepatan Perubahan Harga (Price Velocity)
     if perubahan_harga > 0:
         skor_dinamis += (perubahan_harga * 10)
     elif perubahan_harga < 0:
-        skor_dinamis += (perubahan_harga * 10) # Mengurangi skor jika minus
+        skor_dinamis += (perubahan_harga * 10) 
         
-    # Faktor RSI (Sensitivitas momentum)
     if rsi_sekarang > 50:
         skor_dinamis += (rsi_sekarang - 50) * 0.4
     else:
         skor_dinamis -= (50 - rsi_sekarang) * 0.4
 
-    # Membatasi persentase agar berada di rentang wajar (10% - 95%)
     skor_dinamis = max(10.0, min(95.0, skor_dinamis))
     prob_naik = skor_dinamis / 100.0
     prob_turun = 1.0 - prob_naik
 
-    # Penentuan Status Sinyal Berdasarkan Angka Dinamis
     if prob_naik >= 0.58:
         status_sinyal = "BUY"
         persen_tampil = prob_naik * 100
@@ -139,9 +128,9 @@ elif df_live is not None and not df_live.empty:
         persen_tampil = 50.0
 
     # ==========================================
-    # 7. PANEL METRIK DASHBOARD
+    # 7. PANEL METRIK 
     # ==========================================
-    st.text(f"⏱️ Update ({pilihan_tf}): {waktu_data}")
+    st.text(f"⏱️ Update Terakhir: {waktu_data} | Mode Anti-Banned")
     
     c1, c2 = st.columns(2)
     c1.metric("📌 Entry (XAUUSD)", f"${harga_sekarang:.2f}", delta=f"{perubahan_harga:.2f}")
@@ -154,28 +143,32 @@ elif df_live is not None and not df_live.empty:
     st.divider()
 
     # ==========================================
-    # 8. KEPUTUSAN DINAMIS DI LAYAR
+    # 8. KEPUTUSAN 
     # ==========================================
     if status_sinyal == "BUY":
         st.success(f"🟢 **SINYAL DINAMIS : BUY**\n\nKekuatan Momentum: **{persen_tampil:.1f}%**\nHarga Acuan: **${harga_sekarang:.2f}**")
     elif status_sinyal == "SELL":
         st.error(f"🔴 **SINYAL DINAMIS : SELL**\n\nKekuatan Momentum: **{persen_tampil:.1f}%**\nHarga Acuan: **${harga_sekarang:.2f}**")
     else:
-        st.warning(f"⚪ **STATUS : WAIT / KONSOLIDASI**\n\nPasar sedang bergerak tipis. Naik: {prob_naik*100:.1f}% | Turun: {prob_turun*100:.1f}%")
+        st.warning(f"⚪ **STATUS : WAIT / KONSOLIDASI**\n\nPasar sedang tipis. Naik: {prob_naik*100:.1f}% | Turun: {prob_turun*100:.1f}%")
 
-    # BAR LOADING & COUNTDOWN TEPAT DI BAWAH REKOMENDASI (DIUBAH JADI 5 DETIK)
+    # BAR LOADING & COUNTDOWN 30 DETIK (AMAN SERVER)
     st.markdown("---")
     info_refresh = st.empty()
     bar_loading = st.progress(0)
 
-    for i in range(5):
-        sisa_waktu = 5 - i
-        info_refresh.caption(f"⏳ Refresh dinamis dalam {sisa_waktu} detik...")
-        bar_loading.progress((i + 1) * 20)
+    # Menghitung mundur dari 30
+    for i in range(30):
+        sisa_waktu = 30 - i
+        info_refresh.caption(f"⏳ Refresh siklus aman dalam {sisa_waktu} detik...")
+        # Kalkulasi bar agar pas 100% di akhir (100 / 30 = 3.33)
+        bar_loading.progress(int((i + 1) * 3.33))
         time.sleep(1)
+        
+    bar_loading.progress(100) # Pastikan full di detik terakhir
 
     # ==========================================
-    # 9. GRAFIK ASLI DENGAN EMA 50
+    # 9. GRAFIK CANDLESTICK
     # ==========================================
     st.subheader(f"Grafik Candlestick ({pilihan_tf})")
     df_chart = df_live.tail(40).copy()

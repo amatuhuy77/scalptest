@@ -29,7 +29,7 @@ risiko_persen = st.sidebar.slider("Batas Risiko per Trade (%):", min_value=0.5, 
 # Slider Fleksibel untuk Batas Konfluensi Sinyal (Default: 70%)
 min_konfluensi = st.sidebar.slider("Min. Konfluensi Sinyal (%):", min_value=50, max_value=90, value=70, step=5)
 
-# Perhitungan Toleransi Kerugian
+# Perhitungan Toleransi Kerugian Maksimal ($)
 max_risk_usd = modal_akun * (risiko_persen / 100.0)
 st.sidebar.markdown("---")
 st.sidebar.metric("💥 Maksimal Rugi / Trade", f"${max_risk_usd:.2f}")
@@ -70,7 +70,7 @@ def hitung_indikator(df):
     return df
 
 # ==========================================
-# 4. PENGAMBILAN DATA LIVE
+# 4. PENGAMBILAN DATA LIVE (AUTO REFRESH DATA SENSITIF)
 # ==========================================
 @st.cache_data(ttl=10, show_spinner=False)
 def get_live_data(tf, period):
@@ -115,10 +115,12 @@ elif df_live is not None and not df_live.empty:
     macd_sekarang = float(data_terbaru['MACD'].iloc[0])
     macd_sig_sekarang = float(data_terbaru['MACD_Signal'].iloc[0])
     waktu_data = data_terbaru.index[0].strftime("%H:%M:%S")
-    momentum = harga_sekarang - harga_buka
+    
+    # Selisih harga dalam Dolar ($)
+    momentum_usd = harga_sekarang - harga_buka
 
     # ==========================================
-    # 6. LOGIKA KONFLUENSI SINYAL (DINAMIS SENSITIVITY)
+    # 6. LOGIKA KONFLUENSI SINYAL
     # ==========================================
     skor_bullish = 0
     skor_bearish = 0
@@ -130,9 +132,9 @@ elif df_live is not None and not df_live.empty:
         skor_bearish += 30
 
     # 2. Momentum Lilin Berjalan (20 Poin)
-    if momentum > 0:
+    if momentum_usd > 0:
         skor_bullish += 20
-    elif momentum < 0:
+    elif momentum_usd < 0:
         skor_bearish += 20
 
     # 3. MACD Crossover (25 Poin)
@@ -142,12 +144,12 @@ elif df_live is not None and not df_live.empty:
         skor_bearish += 25
 
     # 4. Filter RSI Aman (25 Poin)
-    if 50 < rsi_sekarang < 68:  # BUY aman
+    if 50 < rsi_sekarang < 68:
         skor_bullish += 25
-    elif 32 < rsi_sekarang <= 50:  # SELL aman
+    elif 32 < rsi_sekarang <= 50:
         skor_bearish += 25
 
-    # PENENTUAN SINYAL BERDASARKAN SLIDER (DEFAULT 70%)
+    # PENENTUAN SINYAL BERDASARKAN SLIDER CONFLUENCE
     if skor_bullish >= min_konfluensi:
         status_sinyal = "BUY"
         kekuatan = skor_bullish
@@ -163,27 +165,33 @@ elif df_live is not None and not df_live.empty:
         kekuatan = max(skor_bullish, skor_bearish)
         sl, tp = 0.0, 0.0
 
-    # ESTIMASI LOT IDEAL BERBASIS ATR
-    jarak_sl_pips = abs(harga_sekarang - sl) if sl > 0 else (atr_sekarang * 1.5)
+    # PERHITUNGAN PRESISI JARAK & NIKMAT LOT BERDASARKAN DOLAR ($)
+    jarak_sl_usd = abs(harga_sekarang - sl) if sl > 0 else (atr_sekarang * 1.5)
+    jarak_sl_pips = jarak_sl_usd * 10  # 1 USD pergerakan Emas = 10 Pips (100 Points)
     
     if tipe_akun == "Standard / Raw Spread":
-        lot_ideal = max_risk_usd / (jarak_sl_pips * 100) if jarak_sl_pips > 0 else 0.01
+        # 1 Lot Standard = $100 nilai risiko per $1.00 pergerakan harga
+        lot_ideal = max_risk_usd / (jarak_sl_usd * 100) if jarak_sl_usd > 0 else 0.01
         lot_rekomendasi = max(0.01, round(lot_ideal, 2))
         unit_lot = "Lot Standard"
     else:
-        lot_ideal = (max_risk_usd * 100) / (jarak_sl_pips * 100) if jarak_sl_pips > 0 else 0.1
+        # Akun Cent = $1.00 nilai risiko per $1.00 pergerakan harga
+        lot_ideal = max_risk_usd / (jarak_sl_usd * 1) if jarak_sl_usd > 0 else 0.1
         lot_rekomendasi = max(0.1, round(lot_ideal, 1))
         unit_lot = "Lot Cent"
 
     st.sidebar.info(f"💡 **Ukuran Lot Aman:** `{lot_rekomendasi}` {unit_lot}")
 
     # ==========================================
-    # 7. TAMPILAN DASHBOARD & METRIK
+    # 7. TAMPILAN DASHBOARD & METRIK ($)
     # ==========================================
     st.caption(f"⏱️ Update Terakhir: **{waktu_data}** | Timeframe: **{pilihan_tf}** | Target Konfluensi: **{min_konfluensi}%**")
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("📌 Entry Price", f"${harga_sekarang:.2f}", delta=f"{momentum:.2f} (Live)")
+    # Tampilan perubahan harga dalam format nominal $ Dolar
+    format_delta = f"+${momentum_usd:.2f}" if momentum_usd >= 0 else f"-${abs(momentum_usd):.2f}"
+    
+    c1.metric("📌 Entry Price (XAUUSD)", f"${harga_sekarang:.2f}", delta=format_delta)
     c2.metric("📊 RSI (14)", f"{rsi_sekarang:.1f}")
     c3.metric("📈 Volatilitas ATR", f"${atr_sekarang:.2f}")
     c4.metric("🎯 EMA 200 (Macro)", f"${ema200_sekarang:.2f}")
@@ -207,13 +215,13 @@ elif df_live is not None and not df_live.empty:
         if status_sinyal in ["BUY", "SELL"]:
             st.markdown(f"""
             **📋 TRADING PLAN & RISIKO:**
-            * 🛡️ **Stop Loss (SL):** `${sl:.2f}` (~{jarak_sl_pips:.2f} Pips)
+            * 🛡️ **Stop Loss (SL):** `${sl:.2f}` (Jarak: `${jarak_sl_usd:.2f}` / ~{jarak_sl_pips:.1f} Pips)
             * 🎯 **Take Profit (TP):** `${tp:.2f}`
             * ⚖️ **Rasio Risk/Reward:** `1 : 1.5`
             * 💼 **Gunakan Size:** **`{lot_rekomendasi}` {unit_lot}**
             """)
         else:
-            st.info(f"💡 **Tips Modal Kecil:** Jika pergerakan terasa lambat, kamu bisa menggeser Slider Konfluensi di Sidebar ke **60%-65%**.")
+            st.info("💡 **Tips Modal Kecil:** Jika pergerakan pasar lambat, kamu dapat menggeser Slider Konfluensi di Sidebar ke **60%-65%**.")
 
     # ==========================================
     # 9. GRAFIK CANDLESTICK
@@ -243,7 +251,7 @@ elif df_live is not None and not df_live.empty:
     st.plotly_chart(fig, use_container_width=True)
 
     # ==========================================
-    # 10. TIMER REFRESH
+    # 10. TIMER HITUNG MUNDUR & AUTOMATIC RERUN
     # ==========================================
     st.markdown("---")
     info_refresh = st.empty()
@@ -251,9 +259,9 @@ elif df_live is not None and not df_live.empty:
 
     for i in range(15):
         sisa_waktu = 15 - i
-        info_refresh.caption(f"⏳ Refresh otomatis dalam {sisa_waktu} detik...")
+        info_refresh.caption(f"⏳ Auto-refresh live data dalam {sisa_waktu} detik...")
         bar_loading.progress(int((i + 1) * (100 / 15)))
         time.sleep(1)
 
-# Rerun otomatis
+# Memicu Streamlit untuk merender ulang halaman otomatis
 st.rerun()

@@ -2,173 +2,283 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from xgboost import XGBClassifier
-import streamlit.components.v1 as components
-from datetime import datetime
-import pytz
+import plotly.graph_objects as go
 
-st.set_page_config(page_title="XAU/USD M1 & M5 Scalper Pro", layout="wide", initial_sidebar_state="collapsed")
+# ==========================================
+# 1. KONFIGURASI HALAMAN STREAMLIT
+# ==========================================
+st.set_page_config(
+    page_title="XAUUSD Scalper - Small Account Edition",
+    page_icon="⚡",
+    layout="wide"
+)
 
-st.markdown("""
-    <style>
-    .block-container {
-        padding-top: 0.6rem !important;
-        padding-bottom: 0.6rem !important;
-        padding-left: 0.4rem !important;
-        padding-right: 0.4rem !important;
-        max-width: 100% !important;
-    }
-    @media (max-width: 768px) {
-        h1 { font-size: 1.4rem !important; }
-        h3 { font-size: 1rem !important; }
-    }
-    </style>
-""", unsafe_allow_html=True)
+st.title("⚡ XAUUSD Scalper Pro (Modal Kecil Edition)")
+st.caption("Sistem Analisis Presisi Tinggi & Kalkulator Manajemen Risiko Real-Time")
 
-st.title("XAU/USD - DUAL SCALPER AI (M1 & M5) ⚡")
+# ==========================================
+# 2. SIDEBAR: KALKULATOR RISIKO & DYNAMIC THRESHOLD
+# ==========================================
+st.sidebar.header("🛡️ Manajemen Risiko & Sinyal")
 
-def get_market_session_wita():
-    wita = pytz.timezone('Asia/Makassar')
-    now_wita = datetime.now(wita)
-    jam = now_wita.hour
-    waktu_str = f"{jam:02d}:{now_wita.minute:02d} WITA"
-    
-    if 6 <= jam < 14: return waktu_str, "Sesi Asia 🌏", "Range Sempit (Fokus M1/M5 Aman)"
-    elif 14 <= jam < 20: return waktu_str, "Sesi London 🌍", "Breakout Kuat (Hati-hati Lonjakan)"
-    else: return waktu_str, "Sesi New York 🌎", "Sangat Volatil (Gunakan SL Ketat)"
+tipe_akun = st.sidebar.selectbox("Tipe Akun Broker:", ["Standard / Raw Spread", "Cent Account"])
+modal_akun = st.sidebar.number_input("Modal Akun ($):", min_value=5.0, value=50.0, step=5.0)
+risiko_persen = st.sidebar.slider("Batas Risiko per Trade (%):", min_value=0.5, max_value=3.0, value=1.0, step=0.5)
 
-waktu, sesi, karakter = get_market_session_wita()
-st.info(f"🕒 **{waktu}** | **{sesi}**\n\n💡 {karakter}")
+# Slider Fleksibel untuk Batas Konfluensi Sinyal (Default: 70%)
+min_konfluensi = st.sidebar.slider("Min. Konfluensi Sinyal (%):", min_value=50, max_value=90, value=70, step=5)
 
-# Fungsi AI Dinamis untuk M1 atau M5
-@st.cache_data(ttl=5)
-def hitung_ai_multi(interval):
-    tf_map = {"M1": "1m", "M5": "5m"}
-    period_map = {"M1": "5d", "M5": "1mo"}
-    
-    gold = yf.download("XAUUSD=X", period=period_map[interval], interval=tf_map[interval], progress=False)
-    
-    if gold.empty:
-        gold = yf.download("GC=F", period=period_map[interval], interval=tf_map[interval], progress=False)
-    if gold.empty:
-        raise ValueError(f"Yahoo Finance membatasi data {interval}. Coba beberapa saat lagi.")
+# Perhitungan Toleransi Kerugian Maksimal ($)
+max_risk_usd = modal_akun * (risiko_persen / 100.0)
+st.sidebar.markdown("---")
+st.sidebar.metric("💥 Maksimal Rugi / Trade", f"${max_risk_usd:.2f}")
 
-    df = pd.DataFrame(index=gold.index)
-    df['Close'] = gold['Close']
-    df['Open'] = gold['Open']
-    df['High'] = gold['High']
-    df['Low'] = gold['Low']
-    df.dropna(inplace=True)
-    
-    df['Return'] = df['Close'].pct_change()
-    df['Body'] = df['Close'] - df['Open']
-    
-    window_size = 10 if interval == "M1" else 14
-    
-    df['SMA'] = df['Close'].rolling(window=window_size).mean()
-    df['Std_Dev'] = df['Close'].rolling(window=window_size).std()
-    df['BB_Width'] = (df['SMA'] + (df['Std_Dev'] * 2)) - (df['SMA'] - (df['Std_Dev'] * 2))
-    
-    df['TR'] = np.maximum(df['High'] - df['Low'], 
-                          np.maximum(abs(df['High'] - df['Close'].shift(1)), 
-                                     abs(df['Low'] - df['Close'].shift(1))))
-    df['ATR'] = df['TR'].rolling(window=window_size).mean()
-    
-    df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
-    df.dropna(inplace=True)
-    
-    if len(df) < 15: 
-        raise ValueError(f"Data {interval} terkumpul hanya {len(df)} baris. Belum cukup.")
-    
-    features = ['Return', 'Body', 'BB_Width', 'ATR']
-    model = XGBClassifier(n_estimators=60, learning_rate=0.12, max_depth=3, random_state=42)
-    model.fit(df[features][:-1], df['Target'][:-1])
-    
-    latest_data = df[features].tail(1)
-    proba = model.predict_proba(latest_data)[0]
-    
-    return df['Close'].iloc[-1], df['ATR'].iloc[-1], proba[1]*100, proba[0]*100
+st.sidebar.markdown("---")
+pilihan_tf = st.sidebar.selectbox("Timeframe Utama:", ["1m", "5m", "15m"], index=1)
+periode_data = "5d"
 
-st.subheader("🤖 Pilih Timeframe Analisis AI")
+# ==========================================
+# 3. FUNGSI INDIKATOR TEKNIKAL & AI OPTIMIZED
+# ==========================================
+def hitung_indikator(df):
+    """Kalkulasi vektor cepat menggunakan pandas/numpy"""
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / (loss + 1e-9)
+    df['RSI_14'] = 100 - (100 / (1 + rs))
 
-if 'tf_aktif' not in st.session_state:
-    st.session_state.tf_aktif = "M1"
+    df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
+    df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
 
-pilih_col1, pilih_col2 = st.columns(2)
-with pilih_col1:
-    if st.button("⚡ Mode M1 (Cepat)", use_container_width=True):
-        st.session_state.tf_aktif = "M1"
-with pilih_col2:
-    if st.button("🛡️ Mode M5 (Tren)", use_container_width=True):
-        st.session_state.tf_aktif = "M5"
+    ema12 = df['Close'].ewm(span=12, adjust=False).mean()
+    ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+    df['MACD'] = ema12 - ema26
+    df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
 
-st.markdown(f"**AI Aktif:** Timeframe **{st.session_state.tf_aktif}** (Auto-Update 5 Detik)")
+    high_low = df['High'] - df['Low']
+    high_close = np.abs(df['High'] - df['Close'].shift())
+    low_close = np.abs(df['Low'] - df['Close'].shift())
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    df['ATR_14'] = tr.rolling(window=14).mean()
+    
+    return df
 
-@st.fragment(run_every="5s")
-def ai_dual_dashboard():
+@st.cache_data(ttl=15, show_spinner=False)
+def fetch_single_tf(tf, period="5d"):
+    """Mengambil dan memproses data per timeframe dengan caching 15 detik"""
     try:
-        tf = st.session_state.tf_aktif
-        c_price, c_atr, p_naik, p_turun = hitung_ai_multi(tf)
-        
-        pengali_tp = 1.2 if tf == "M1" else 1.8
-        pengali_sl = 0.9 if tf == "M1" else 1.2
-        
-        jarak_tp = c_atr * pengali_tp
-        jarak_sl = c_atr * pengali_sl
-        
-        batas_naik = c_price + jarak_tp
-        batas_turun = c_price - jarak_tp
-        
-        if p_naik >= 58.0:
-            st.success(f"🟢 **BUY SCALP ({tf})** | Prob: **{p_naik:.1f}%** | Entry: **${c_price:.2f}**\n\n📈 **TP:** ${batas_naik:.2f} *(+${jarak_tp:.2f})* \n\n🛡️ **SL:** ${c_price - jarak_sl:.2f} *(-${jarak_sl:.2f})*")
-        elif p_turun >= 58.0:
-            st.error(f"🔴 **SELL SCALP ({tf})** | Prob: **{p_turun:.1f}%** | Entry: **${c_price:.2f}**\n\n📉 **TP:** ${batas_turun:.2f} *(-${jarak_tp:.2f})* \n\n🛡️ **SL:** ${c_price + jarak_sl:.2f} *(+${jarak_sl:.2f})*")
-        else:
-            st.warning(f"⚪ **WAIT ({tf})** | Naik {p_naik:.1f}% vs Turun {p_turun:.1f}%.\n\nPasar konsolidasi di {tf}. Tunggu arah dominan.")
+        df = yf.download(tickers="GC=F", period=period, interval=tf, progress=False)
+        if df.empty:
+            df = yf.download(tickers="XAUUSD=X", period=period, interval=tf, progress=False)
+        if df.empty:
+            return None
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df = hitung_indikator(df)
+        df.dropna(inplace=True)
+        return df
+    except Exception:
+        return None
+
+@st.cache_data(ttl=15, show_spinner=False)
+def hitung_ai_multi(timeframes=("1m", "5m", "15m")):
+    """
+    Fungsi Analisis Multi-Timeframe Teroptimasi.
+    Menghitung skor konfluensi tren gabungan secara cepat.
+    """
+    hasil = {}
+    skor_total = 0
+    count = 0
+    
+    for tf in timeframes:
+        df = fetch_single_tf(tf)
+        if df is not None and not df.empty:
+            last = df.iloc[-1]
+            close = float(last['Close'])
+            ema50 = float(last['EMA_50'])
+            ema200 = float(last['EMA_200'])
+            rsi = float(last['RSI_14'])
             
-    except Exception as e:
-        st.error(f"Gagal memproses AI {st.session_state.tf_aktif}: {e}")
+            # Evaluasi Tren per Timeframe
+            if close > ema50 > ema200 and rsi > 50:
+                bias = "BULLISH"
+                skor = 100
+            elif close < ema50 < ema200 and rsi < 50:
+                bias = "BEARISH"
+                skor = -100
+            else:
+                bias = "NEUTRAL"
+                skor = 0
+                
+            hasil[tf] = {"bias": bias, "close": close, "rsi": rsi}
+            skor_total += skor
+            count += 1
 
-ai_dual_dashboard()
-
-st.markdown("---")
-
-st.subheader("📊 Grafik Live (OANDA)")
+    bias_global = "NEUTRAL"
+    if count > 0:
+        rata_skor = skor_total / count
+        if rata_skor >= 50:
+            bias_global = "BULLISH"
+        elif rata_skor <= -50:
+            bias_global = "BEARISH"
+            
+    return hasil, bias_global
 
 # ==========================================
-# PENGATURAN UKURAN GRAFIK (PANJANG & LEBAR)
+# 4. RENDER DASHBOARD UTAMA
 # ==========================================
-TINGGI_GRAFIK = 900  # Ubah angka ini jika ingin lebih panjang atau pendek ke bawah
-LEBAR_GRAFIK = "100%" # Ubah ukuran lebar jika diinginkan
+df_live = fetch_single_tf(pilihan_tf, periode_data)
 
-tradingview_html = """
-<!-- TradingView Widget BEGIN -->
-<div class="tradingview-widget-container" style="height:100%; width:100%;">
-  <div id="tradingview_xauusd" style="height:100%; width:100%;"></div>
-  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <script type="text/javascript">
-  new TradingView.widget(
-  {
-  "autosize": true,
-  "symbol": "OANDA:XAUUSD",
-  "interval": "1",
-  "timezone": "Asia/Makassar",
-  "theme": "dark",
-  "style": "1",
-  "locale": "id",
-  "enable_publishing": false,
-  "backgroundColor": "#0e1117",
-  "gridColor": "#222629",
-  "hide_top_toolbar": false,
-  "hide_legend": false,
-  "save_image": false,
-  "container_id": "tradingview_xauusd",
-  "toolbar_bg": "#0e1117"
-}
-  );
-  </script>
-</div>
-<!-- TradingView Widget END -->
-"""
+if df_live is None or df_live.empty:
+    st.error("🚨 Gagal mengambil data pasar XAUUSD. Silakan coba beberapa saat lagi.")
+else:
+    data_terbaru = df_live.iloc[-1:]
+    
+    harga_sekarang = float(data_terbaru['Close'].iloc[0])
+    harga_buka = float(data_terbaru['Open'].iloc[0])
+    rsi_sekarang = float(data_terbaru['RSI_14'].iloc[0])
+    atr_sekarang = float(data_terbaru['ATR_14'].iloc[0])
+    ema50_sekarang = float(data_terbaru['EMA_50'].iloc[0])
+    ema200_sekarang = float(data_terbaru['EMA_200'].iloc[0])
+    macd_sekarang = float(data_terbaru['MACD'].iloc[0])
+    macd_sig_sekarang = float(data_terbaru['MACD_Signal'].iloc[0])
+    waktu_data = data_terbaru.index[0].strftime("%H:%M:%S")
+    
+    momentum_usd = harga_sekarang - harga_buka
 
-components.html(tradingview_html, height=TINGGI_GRAFIK)
+    # Menjalankan Analisis Multi-Timeframe AI (Sangat cepat karena dikas)
+    ai_data, bias_macro = hitung_ai_multi(timeframes=("1m", "5m", "15m"))
+
+    # Logika Konfluensi
+    skor_bullish = 0
+    skor_bearish = 0
+
+    if harga_sekarang > ema50_sekarang and ema50_sekarang > ema200_sekarang:
+        skor_bullish += 30
+    elif harga_sekarang < ema50_sekarang and ema50_sekarang < ema200_sekarang:
+        skor_bearish += 30
+
+    if momentum_usd > 0:
+        skor_bullish += 20
+    elif momentum_usd < 0:
+        skor_bearish += 20
+
+    if macd_sekarang > macd_sig_sekarang:
+        skor_bullish += 25
+    else:
+        skor_bearish += 25
+
+    if 50 < rsi_sekarang < 68:
+        skor_bullish += 25
+    elif 32 < rsi_sekarang <= 50:
+        skor_bearish += 25
+
+    # Ekstra Sinyal dari AI Multi-Timeframe
+    if bias_macro == "BULLISH":
+        skor_bullish = min(100, skor_bullish + 10)
+    elif bias_macro == "BEARISH":
+        skor_bearish = min(100, skor_bearish + 10)
+
+    if skor_bullish >= min_konfluensi:
+        status_sinyal = "BUY"
+        kekuatan = skor_bullish
+        sl = harga_sekarang - (atr_sekarang * 1.5)
+        tp = harga_sekarang + (atr_sekarang * 2.25)
+    elif skor_bearish >= min_konfluensi:
+        status_sinyal = "SELL"
+        kekuatan = skor_bearish
+        sl = harga_sekarang + (atr_sekarang * 1.5)
+        tp = harga_sekarang - (atr_sekarang * 2.25)
+    else:
+        status_sinyal = "WAIT"
+        kekuatan = max(skor_bullish, skor_bearish)
+        sl, tp = 0.0, 0.0
+
+    jarak_sl_usd = abs(harga_sekarang - sl) if sl > 0 else (atr_sekarang * 1.5)
+    jarak_sl_pips = jarak_sl_usd * 10
+    
+    if tipe_akun == "Standard / Raw Spread":
+        lot_ideal = max_risk_usd / (jarak_sl_usd * 100) if jarak_sl_usd > 0 else 0.01
+        lot_rekomendasi = max(0.01, round(lot_ideal, 2))
+        unit_lot = "Lot Standard"
+    else:
+        lot_ideal = max_risk_usd / (jarak_sl_usd * 1) if jarak_sl_usd > 0 else 0.1
+        lot_rekomendasi = max(0.1, round(lot_ideal, 1))
+        unit_lot = "Lot Cent"
+
+    st.sidebar.info(f"💡 **Ukuran Lot Aman:** `{lot_rekomendasi}` {unit_lot}")
+
+    # Panel Ringkasan Multi-Timeframe AI
+    st.markdown(f"⏱️ **Update Terakhir:** `{waktu_data}` | **AI Macro Bias:** `{bias_macro}`")
+    
+    col_tf1, col_tf2, col_tf3 = st.columns(3)
+    for idx, (tf_key, tf_val) in enumerate(ai_data.items()):
+        col = [col_tf1, col_tf2, col_tf3][idx]
+        col.caption(f"TF {tf_key}: **{tf_val['bias']}** (RSI: {tf_val['rsi']:.1f})")
+
+    st.divider()
+
+    c1, c2, c3, c4 = st.columns(4)
+    format_delta = f"+${momentum_usd:.2f}" if momentum_usd >= 0 else f"-${abs(momentum_usd):.2f}"
+    
+    c1.metric("📌 Entry Price", f"${harga_sekarang:.2f}", delta=format_delta)
+    c2.metric("📊 RSI (14)", f"{rsi_sekarang:.1f}")
+    c3.metric("📈 Volatilitas ATR", f"${atr_sekarang:.2f}")
+    c4.metric("🎯 EMA 200", f"${ema200_sekarang:.2f}")
+
+    st.divider()
+
+    col_sig, col_plan = st.columns([1.2, 1])
+
+    with col_sig:
+        if status_sinyal == "BUY":
+            st.success(f"🟢 **SIGNAL: CONFLUENCE BUY**\n\nKekuatan Konfluensi: **{kekuatan}%** (Target: {min_konfluensi}%)\nHarga Entry Acuan: **${harga_sekarang:.2f}**")
+        elif status_sinyal == "SELL":
+            st.error(f"🔴 **SIGNAL: CONFLUENCE SELL**\n\nKekuatan Konfluensi: **{kekuatan}%** (Target: {min_konfluensi}%)\nHarga Entry Acuan: **${harga_sekarang:.2f}**")
+        else:
+            st.warning(f"⚪ **STATUS: WAIT / BELUM MEMENUHI TARGET**\n\nKonfluensi tertinggi saat ini: **{kekuatan}%** (Target minimal: **{min_konfluensi}%**). Sabar menunggu momen yang pas!")
+
+    with col_plan:
+        if status_sinyal in ["BUY", "SELL"]:
+            st.markdown(f"""
+            **📋 TRADING PLAN & RISIKO:**
+            * 🛡️ **Stop Loss (SL):** `${sl:.2f}` (Jarak: `${jarak_sl_usd:.2f}` / ~{jarak_sl_pips:.1f} Pips)
+            * 🎯 **Take Profit (TP):** `${tp:.2f}`
+            * ⚖️ **Rasio Risk/Reward:** `1 : 1.5`
+            * 💼 **Gunakan Size:** **`{lot_rekomendasi}` {unit_lot}**
+            """)
+        else:
+            st.info("💡 **Tips Modal Kecil:** Jika pergerakan pasar lambat, kamu dapat menggeser Slider Konfluensi di Sidebar ke **60%-65%**.")
+
+    # Grafik Candlestick
+    st.subheader(f"Grafik Candlestick Real-Time ({pilihan_tf})")
+    df_chart = df_live.tail(45).copy()
+
+    fig = go.Figure(data=[go.Candlestick(
+        x=df_chart.index,
+        open=df_chart['Open'],
+        high=df_chart['High'],
+        low=df_chart['Low'],
+        close=df_chart['Close'],
+        name="XAUUSD"
+    )])
+
+    fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA_50'], line=dict(color='yellow', width=1.5), name='EMA 50'))
+    fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA_200'], line=dict(color='cyan', width=1.5), name='EMA 200'))
+
+    fig.update_layout(
+        xaxis_rangeslider_visible=False,
+        template="plotly_dark",
+        height=400,
+        margin=dict(l=0, r=0, t=10, b=0),
+        xaxis=dict(type='category')
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# Auto-refresh halus menggunakan fitur bawaan Streamlit
+@st.fragment(run_every="15s")
+def auto_refresh_banner():
+    st.caption("🔄 Data otomatis diperbarui setiap 15 detik secara background.")
+
+auto_refresh_banner()

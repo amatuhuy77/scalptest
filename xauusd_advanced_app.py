@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 st.title("⚡ XAUUSD Scalper Pro (Modal Kecil Edition)")
-st.caption("Sistem Analisis Presisi Tinggi & Kalkulator Manajemen Risiko Real-Time")
+st.caption("Sistem Analisis Presisi Tinggi, Filter Pullback & Manajemen Risiko Real-Time")
 
 # ==========================================
 # 2. SIDEBAR: KALKULATOR RISIKO & DYNAMIC THRESHOLD
@@ -28,6 +28,9 @@ risiko_persen = st.sidebar.slider("Batas Risiko per Trade (%):", min_value=0.5, 
 
 # Slider Fleksibel untuk Batas Konfluensi Sinyal
 min_konfluensi = st.sidebar.slider("Min. Konfluensi Sinyal (%):", min_value=50, max_value=90, value=70, step=5)
+
+# Toleransi jarak Pullback terhadap ATR (0.5x hingga 1.5x ATR)
+toleransi_pullback_atr = st.sidebar.slider("Toleransi Area Pullback (x ATR):", min_value=0.3, max_value=1.5, value=0.8, step=0.1)
 
 # Perhitungan Toleransi Kerugian Maksimal ($)
 max_risk_usd = modal_akun * (risiko_persen / 100.0)
@@ -122,7 +125,7 @@ def hitung_ai_multi(timeframes=("1m", "5m", "15m")):
 # ==========================================
 # 4. PROSES DATA DENGAN LOADING SPINNER
 # ==========================================
-with st.spinner("🔄 Sedang memperbarui harga live & konfluensi AI Multi-Timeframe..."):
+with st.spinner("🔄 Sedang memperbarui data pasar & mengecek area Pullback..."):
     df_live = fetch_single_tf(pilihan_tf, periode_data)
     ai_data, bias_macro = hitung_ai_multi(timeframes=("1m", "5m", "15m"))
 
@@ -143,7 +146,7 @@ else:
     
     momentum_usd = harga_sekarang - harga_buka
 
-    # Logika Konfluensi
+    # LOGIKA KONFLUENSI TREN
     skor_bullish = 0
     skor_bearish = 0
 
@@ -172,20 +175,38 @@ else:
     elif bias_macro == "BEARISH":
         skor_bearish = min(100, skor_bearish + 10)
 
+    # EVALUASI AREA PULLBACK (Jarak Ke EMA 50)
+    jarak_ke_ema50 = abs(harga_sekarang - ema50_sekarang)
+    batas_jarak_ideal = atr_sekarang * toleransi_pullback_atr
+    is_in_pullback_zone = jarak_ke_ema50 <= batas_jarak_ideal
+
+    # DOKTRIN SINYAL KEBUTUHAN PULLBACK
     if skor_bullish >= min_konfluensi:
-        status_sinyal = "BUY"
+        bias_tren = "BUY"
         kekuatan = skor_bullish
         sl = harga_sekarang - (atr_sekarang * 1.5)
         tp = harga_sekarang + (atr_sekarang * 2.25)
     elif skor_bearish >= min_konfluensi:
-        status_sinyal = "SELL"
+        bias_tren = "SELL"
         kekuatan = skor_bearish
         sl = harga_sekarang + (atr_sekarang * 1.5)
         tp = harga_sekarang - (atr_sekarang * 2.25)
     else:
-        status_sinyal = "WAIT"
+        bias_tren = "WAIT"
         kekuatan = max(skor_bullish, skor_bearish)
         sl, tp = 0.0, 0.0
+
+    # KEPUTUSAN FINAL SINYAL (MEMINJAM KONSEP FINEX)
+    if bias_tren in ["BUY", "SELL"]:
+        if is_in_pullback_zone:
+            status_sinyal = f"READY {bias_tren}"
+            catatan_pullback = f"✅ Harga berada di area Pullback ideal (Jarak ke EMA 50: `${jarak_ke_ema50:.2f}` <= `${batas_jarak_ideal:.2f}`). Momen Entry Presisi!"
+        else:
+            status_sinyal = f"WAIT PULLBACK ({bias_tren})"
+            catatan_pullback = f"⏳ Tren kuat {bias_tren}, namun harga sudah *overextended* (terlalu jauh dari EMA 50). Tunggu harga memantul mendekati area `${ema50_sekarang:.2f}`."
+    else:
+        status_sinyal = "WAIT TREN"
+        catatan_pullback = "⚪ Konfluensi tren belum terpenuhi. Sabar menunggu persilangan atau breakout."
 
     jarak_sl_usd = abs(harga_sekarang - sl) if sl > 0 else (atr_sekarang * 1.5)
     jarak_sl_pips = jarak_sl_usd * 10
@@ -202,7 +223,7 @@ else:
     st.sidebar.info(f"💡 **Ukuran Lot Aman:** `{lot_rekomendasi}` {unit_lot}")
 
     # Header Informasi
-    st.caption(f"⏱️ **Update Terakhir:** `{waktu_data}` | **AI Macro Trend:** `{bias_macro}`")
+    st.caption(f"⏱️ **Update Terakhir:** `{waktu_data}` | **AI Macro Trend:** `{bias_macro}` | **Status Pullback:** {'`DEKAT EMA 50`' if is_in_pullback_zone else '`OVEREXTENDED`'}")
     
     col_tf1, col_tf2, col_tf3 = st.columns(3)
     for idx, (tf_key, tf_val) in enumerate(ai_data.items()):
@@ -215,24 +236,25 @@ else:
     format_delta = f"+${momentum_usd:.2f}" if momentum_usd >= 0 else f"-${abs(momentum_usd):.2f}"
     
     c1.metric("📌 Entry Price", f"${harga_sekarang:.2f}", delta=format_delta)
-    c2.metric("📊 RSI (14)", f"{rsi_sekarang:.1f}")
-    c3.metric("📈 Volatilitas ATR", f"${atr_sekarang:.2f}")
-    c4.metric("🎯 EMA 200", f"${ema200_sekarang:.2f}")
+    c2.metric("🎯 EMA 50 (Dynamic SR)", f"${ema50_sekarang:.2f}")
+    c3.metric("📊 Jarak Ke EMA 50", f"${jarak_ke_ema50:.2f}")
+    c4.metric("📈 Max Jarak Ideal", f"${batas_jarak_ideal:.2f}")
 
     st.divider()
 
+    # PANEL KEPUTUSAN SINYAL TERFILTER PULLBACK
     col_sig, col_plan = st.columns([1.2, 1])
 
     with col_sig:
-        if status_sinyal == "BUY":
-            st.success(f"🟢 **SIGNAL: CONFLUENCE BUY**\n\nKekuatan Konfluensi: **{kekuatan}%** (Target: {min_konfluensi}%)\nHarga Entry Acuan: **${harga_sekarang:.2f}**")
-        elif status_sinyal == "SELL":
-            st.error(f"🔴 **SIGNAL: CONFLUENCE SELL**\n\nKekuatan Konfluensi: **{kekuatan}%** (Target: {min_konfluensi}%)\nHarga Entry Acuan: **${harga_sekarang:.2f}**")
+        if "READY" in status_sinyal:
+            st.success(f"🟢 **SIGNAL: {status_sinyal}**\n\nKekuatan Konfluensi: **{kekuatan}%**\n\n{catatan_pullback}")
+        elif "WAIT PULLBACK" in status_sinyal:
+            st.warning(f"🟠 **STATUS: {status_sinyal}**\n\nKekuatan Konfluensi: **{kekuatan}%**\n\n{catatan_pullback}")
         else:
-            st.warning(f"⚪ **STATUS: WAIT / BELUM MEMENUHI TARGET**\n\nKonfluensi tertinggi saat ini: **{kekuatan}%** (Target minimal: **{min_konfluensi}%**). Sabar menunggu momen yang pas!")
+            st.info(f"⚪ **STATUS: {status_sinyal}**\n\nKonfluensi tertinggi: **{kekuatan}%** (Target: {min_konfluensi}%).\n\n{catatan_pullback}")
 
     with col_plan:
-        if status_sinyal in ["BUY", "SELL"]:
+        if bias_tren in ["BUY", "SELL"]:
             st.markdown(f"""
             **📋 TRADING PLAN & RISIKO:**
             * 🛡️ **Stop Loss (SL):** `${sl:.2f}` (Jarak: `${jarak_sl_usd:.2f}` / ~{jarak_sl_pips:.1f} Pips)
@@ -241,10 +263,10 @@ else:
             * 💼 **Gunakan Size:** **`{lot_rekomendasi}` {unit_lot}**
             """)
         else:
-            st.info("💡 **Tips Modal Kecil:** Jika pergerakan pasar lambat, kamu dapat menggeser Slider Konfluensi di Sidebar ke **60%-65%**.")
+            st.info("💡 **Tips Modal Kecil:** Tunggu harga bergerak mendekati EMA 50 untuk mendapatkan Stop Loss yang lebih kecil dan rasio Risk/Reward lebih ideal.")
 
     # Grafik Candlestick
-    st.subheader(f"Grafik Candlestick Real-Time ({pilihan_tf})")
+    st.subheader(f"Grafik Candlestick & Area Pullback ({pilihan_tf})")
     df_chart = df_live.tail(45).copy()
 
     fig = go.Figure(data=[go.Candlestick(
@@ -256,8 +278,8 @@ else:
         name="XAUUSD"
     )])
 
-    fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA_50'], line=dict(color='yellow', width=1.5), name='EMA 50'))
-    fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA_200'], line=dict(color='cyan', width=1.5), name='EMA 200'))
+    fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA_50'], line=dict(color='yellow', width=1.5), name='EMA 50 (Dynamic SR)'))
+    fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA_200'], line=dict(color='cyan', width=1.5), name='EMA 200 (Trend)'))
 
     fig.update_layout(
         xaxis_rangeslider_visible=False,
@@ -268,19 +290,15 @@ else:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # ==========================================
-    # 5. VISUAL INDIKATOR AUTO-REFRESH & TIMER
-    # ==========================================
+    # AUTO REFRESH TIMER VISUAL
     st.markdown("---")
     progress_slot = st.empty()
 
-    # Hitung mundur 15 detik dengan Progress Bar visual
     for sisa in range(15, 0, -1):
         persen = int(((15 - sisa) / 15) * 100)
         with progress_slot.container():
-            st.caption(f"🔄 **Status Sistem:** Data Aktif | *Auto-refresh* dalam **{sisa} detik**...")
+            st.caption(f"🔄 **Status Sistem:** Monitoring Pullback & Live Data | *Auto-refresh* dalam **{sisa} detik**...")
             st.progress(persen)
         time.sleep(1)
 
-    # Pemicu Rerun Halaman
     st.rerun()

@@ -1,3 +1,30 @@
+import os
+import sys
+import subprocess
+
+# ==========================================
+# 0. SISTEM AUTO-INSTALL LIBRARY
+# ==========================================
+def install_missing_libraries():
+    required_libraries = {
+        'yfinance': 'yfinance',
+        'pandas': 'pandas',
+        'plotly': 'plotly',
+        'reportlab': 'reportlab'
+    }
+    for module_name, pip_name in required_libraries.items():
+        try:
+            __import__(module_name)
+        except ImportError:
+            print(f"📦 Menginstal otomatis {pip_name}...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
+
+# Jalankan pengecekan dan instalasi otomatis sebelum aplikasi dimuat
+install_missing_libraries()
+
+# ==========================================
+# 1. IMPORT LIBRARY SETELAH DIPASTIKAN AMAN
+# ==========================================
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -12,7 +39,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # ==========================================
-# 1. KONFIGURASI HALAMAN STREAMLIT
+# 2. KONFIGURASI HALAMAN STREAMLIT
 # ==========================================
 st.set_page_config(
     page_title="XAUUSD Scalper Pro",
@@ -21,7 +48,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. FUNGSI GENERATOR PDF GUIDEBOOK IN-MEMORY
+# 3. FUNGSI GENERATOR PDF GUIDEBOOK IN-MEMORY
 # ==========================================
 def buat_pdf_guidebook():
     buffer = io.BytesIO()
@@ -75,7 +102,7 @@ def buat_pdf_guidebook():
     return buffer
 
 # ==========================================
-# 3. SIDEBAR: MANAJEMEN RISIKO & PARAMETER
+# 4. SIDEBAR: MANAJEMEN RISIKO & PARAMETER
 # ==========================================
 st.sidebar.header("🛡️ Manajemen Risiko & Sinyal")
 
@@ -101,7 +128,7 @@ st.sidebar.download_button(
 )
 
 # ==========================================
-# 4. FUNGSI INDIKATOR TEKNIKAL & AI ENGINE
+# 5. FUNGSI INDIKATOR TEKNIKAL & AI ENGINE
 # ==========================================
 def hitung_indikator(df):
     delta = df['Close'].diff()
@@ -167,7 +194,7 @@ def hitung_ai_multi(timeframes=("1m", "5m", "15m")):
     return hasil, bias_global
 
 # ==========================================
-# 5. TAMPILAN UTAMA TAB STREAMLIT
+# 6. TAMPILAN UTAMA TAB STREAMLIT
 # ==========================================
 st.title("⚡ XAUUSD Scalper Pro (Modal Kecil Edition)")
 tab_dashboard, tab_panduan = st.tabs(["📊 Live Scalper Dashboard", "📖 Buku Panduan & Pengertian"])
@@ -227,7 +254,6 @@ with tab_dashboard:
             kekuatan = max(skor_bullish, skor_bearish)
             sl, tp = 0.0, 0.0
 
-        # PEMISAHAN STATUS AGAR WARNANYA BERBEDA
         if bias_tren == "BUY":
             if is_in_pullback_zone:
                 status_sinyal = "READY BUY"
@@ -279,7 +305,6 @@ with tab_dashboard:
 
         col_sig, col_plan = st.columns([1.2, 1])
 
-        # RENDER BLOK WARNA SESUAI STATUS SINYAL
         with col_sig:
             if status_sinyal == "READY BUY":
                 st.success(f"🟢 **SIGNAL: {status_sinyal}**\n\nKekuatan Konfluensi: **{kekuatan}%**\n\n{catatan_pullback}")

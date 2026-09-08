@@ -18,13 +18,16 @@ st.title("⚡ XAUUSD Scalper Pro (Modal Kecil Edition)")
 st.caption("Sistem Analisis Presisi Tinggi & Kalkulator Manajemen Risiko Real-Time")
 
 # ==========================================
-# 2. SIDEBAR: KALKULATOR RISIKO & TIPE AKUN
+# 2. SIDEBAR: KALKULATOR RISIKO & DYNAMIC THRESHOLD
 # ==========================================
-st.sidebar.header("🛡️ Manajemen Risiko Modal")
+st.sidebar.header("🛡️ Manajemen Risiko & Sinyal")
 
 tipe_akun = st.sidebar.selectbox("Tipe Akun Broker:", ["Standard / Raw Spread", "Cent Account"])
 modal_akun = st.sidebar.number_input("Modal Akun ($):", min_value=5.0, value=50.0, step=5.0)
 risiko_persen = st.sidebar.slider("Batas Risiko per Trade (%):", min_value=0.5, max_value=3.0, value=1.0, step=0.5)
+
+# Slider Fleksibel untuk Batas Konfluensi Sinyal (Default: 70%)
+min_konfluensi = st.sidebar.slider("Min. Konfluensi Sinyal (%):", min_value=50, max_value=90, value=70, step=5)
 
 # Perhitungan Toleransi Kerugian
 max_risk_usd = modal_akun * (risiko_persen / 100.0)
@@ -67,7 +70,7 @@ def hitung_indikator(df):
     return df
 
 # ==========================================
-# 4. PENGAMBILAN DATA LIVE (CACHE DENGAN TTL SANGAT SINGKAT)
+# 4. PENGAMBILAN DATA LIVE
 # ==========================================
 @st.cache_data(ttl=10, show_spinner=False)
 def get_live_data(tf, period):
@@ -115,7 +118,7 @@ elif df_live is not None and not df_live.empty:
     momentum = harga_sekarang - harga_buka
 
     # ==========================================
-    # 6. LOGIKA KONFLUENSI KETAT (MODAL KECIL / DILINDUNGI TREN)
+    # 6. LOGIKA KONFLUENSI SINYAL (DINAMIS SENSITIVITY)
     # ==========================================
     skor_bullish = 0
     skor_bearish = 0
@@ -139,48 +142,45 @@ elif df_live is not None and not df_live.empty:
         skor_bearish += 25
 
     # 4. Filter RSI Aman (25 Poin)
-    if 50 < rsi_sekarang < 68:  # BUY aman (tidak overbought)
+    if 50 < rsi_sekarang < 68:  # BUY aman
         skor_bullish += 25
-    elif 32 < rsi_sekarang <= 50:  # SELL aman (tidak oversold)
+    elif 32 < rsi_sekarang <= 50:  # SELL aman
         skor_bearish += 25
 
-    # AMBANG BATAS HIGH CONFLUENCE (MINIMAL 80%)
-    if skor_bullish >= 80:
+    # PENENTUAN SINYAL BERDASARKAN SLIDER (DEFAULT 70%)
+    if skor_bullish >= min_konfluensi:
         status_sinyal = "BUY"
         kekuatan = skor_bullish
         sl = harga_sekarang - (atr_sekarang * 1.5)
-        tp = harga_sekarang + (atr_sekarang * 2.25)  # Risk Reward 1 : 1.5
-    elif skor_bearish >= 80:
+        tp = harga_sekarang + (atr_sekarang * 2.25)
+    elif skor_bearish >= min_konfluensi:
         status_sinyal = "SELL"
         kekuatan = skor_bearish
         sl = harga_sekarang + (atr_sekarang * 1.5)
-        tp = harga_sekarang - (atr_sekarang * 2.25)  # Risk Reward 1 : 1.5
+        tp = harga_sekarang - (atr_sekarang * 2.25)
     else:
         status_sinyal = "WAIT"
         kekuatan = max(skor_bullish, skor_bearish)
         sl, tp = 0.0, 0.0
 
-    # PERHITUNGAN ESTIMASI LOT IDEAL BERBASIS ATR
+    # ESTIMASI LOT IDEAL BERBASIS ATR
     jarak_sl_pips = abs(harga_sekarang - sl) if sl > 0 else (atr_sekarang * 1.5)
     
     if tipe_akun == "Standard / Raw Spread":
-        # 1 Lot Standard = $10 per pip ($1 per 0.1 pip)
         lot_ideal = max_risk_usd / (jarak_sl_pips * 100) if jarak_sl_pips > 0 else 0.01
         lot_rekomendasi = max(0.01, round(lot_ideal, 2))
         unit_lot = "Lot Standard"
     else:
-        # Akun Cent (100x lebih longgar)
         lot_ideal = (max_risk_usd * 100) / (jarak_sl_pips * 100) if jarak_sl_pips > 0 else 0.1
         lot_rekomendasi = max(0.1, round(lot_ideal, 1))
         unit_lot = "Lot Cent"
 
-    # Tampilkan Rekomendasi Lot di Sidebar
     st.sidebar.info(f"💡 **Ukuran Lot Aman:** `{lot_rekomendasi}` {unit_lot}")
 
     # ==========================================
     # 7. TAMPILAN DASHBOARD & METRIK
     # ==========================================
-    st.caption(f"⏱️ Update Terakhir: **{waktu_data}** | Timeframe: **{pilihan_tf}**")
+    st.caption(f"⏱️ Update Terakhir: **{waktu_data}** | Timeframe: **{pilihan_tf}** | Target Konfluensi: **{min_konfluensi}%**")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("📌 Entry Price", f"${harga_sekarang:.2f}", delta=f"{momentum:.2f} (Live)")
@@ -197,11 +197,11 @@ elif df_live is not None and not df_live.empty:
 
     with col_sig:
         if status_sinyal == "BUY":
-            st.success(f"🟢 **SIGNAL: HIGH CONFLUENCE BUY**\n\nKekuatan Konfluensi: **{kekuatan}%**\nHarga Entry Acuan: **${harga_sekarang:.2f}**")
+            st.success(f"🟢 **SIGNAL: CONFLUENCE BUY**\n\nKekuatan Konfluensi: **{kekuatan}%** (Target: {min_konfluensi}%)\nHarga Entry Acuan: **${harga_sekarang:.2f}**")
         elif status_sinyal == "SELL":
-            st.error(f"🔴 **SIGNAL: HIGH CONFLUENCE SELL**\n\nKekuatan Konfluensi: **{kekuatan}%**\nHarga Entry Acuan: **${harga_sekarang:.2f}**")
+            st.error(f"🔴 **SIGNAL: CONFLUENCE SELL**\n\nKekuatan Konfluensi: **{kekuatan}%** (Target: {min_konfluensi}%)\nHarga Entry Acuan: **${harga_sekarang:.2f}**")
         else:
-            st.warning(f"⚪ **STATUS: WAIT / PASAR BELUM KONFIRMASI**\n\nKonfluensi tertinggi saat ini: **{kekuatan}%** (Batas aman min: **80%**). Hindari memaksakan entry!")
+            st.warning(f"⚪ **STATUS: WAIT / BELUM MEMENUHI TARGET**\n\nKonfluensi tertinggi saat ini: **{kekuatan}%** (Target minimal: **{min_konfluensi}%**). Sabar menunggu momen yang pas!")
 
     with col_plan:
         if status_sinyal in ["BUY", "SELL"]:
@@ -213,10 +213,10 @@ elif df_live is not None and not df_live.empty:
             * 💼 **Gunakan Size:** **`{lot_rekomendasi}` {unit_lot}**
             """)
         else:
-            st.info("💡 **Tips Modal Kecil:** Menunggu sinyal konfluensi 80%+ jauh lebih aman daripada entry prematur.")
+            st.info(f"💡 **Tips Modal Kecil:** Jika pergerakan terasa lambat, kamu bisa menggeser Slider Konfluensi di Sidebar ke **60%-65%**.")
 
     # ==========================================
-    # 9. GRAFIK CANDLESTICK LEBIH AWAL
+    # 9. GRAFIK CANDLESTICK
     # ==========================================
     st.subheader(f"Grafik Candlestick Real-Time ({pilihan_tf})")
     df_chart = df_live.tail(45).copy()
@@ -230,7 +230,6 @@ elif df_live is not None and not df_live.empty:
         name="XAUUSD"
     )])
 
-    # Garis EMA 50 & EMA 200
     fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA_50'], line=dict(color='yellow', width=1.5), name='EMA 50'))
     fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA_200'], line=dict(color='cyan', width=1.5), name='EMA 200'))
 
@@ -244,7 +243,7 @@ elif df_live is not None and not df_live.empty:
     st.plotly_chart(fig, use_container_width=True)
 
     # ==========================================
-    # 10. TIMER REFRESH DI PALING BAWAH UI
+    # 10. TIMER REFRESH
     # ==========================================
     st.markdown("---")
     info_refresh = st.empty()

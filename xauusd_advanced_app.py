@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import time
 
 # ==========================================
 # 1. KONFIGURASI HALAMAN STREAMLIT
@@ -25,7 +26,7 @@ tipe_akun = st.sidebar.selectbox("Tipe Akun Broker:", ["Standard / Raw Spread", 
 modal_akun = st.sidebar.number_input("Modal Akun ($):", min_value=5.0, value=50.0, step=5.0)
 risiko_persen = st.sidebar.slider("Batas Risiko per Trade (%):", min_value=0.5, max_value=3.0, value=1.0, step=0.5)
 
-# Slider Fleksibel untuk Batas Konfluensi Sinyal (Default: 70%)
+# Slider Fleksibel untuk Batas Konfluensi Sinyal
 min_konfluensi = st.sidebar.slider("Min. Konfluensi Sinyal (%):", min_value=50, max_value=90, value=70, step=5)
 
 # Perhitungan Toleransi Kerugian Maksimal ($)
@@ -41,7 +42,6 @@ periode_data = "5d"
 # 3. FUNGSI INDIKATOR TEKNIKAL & AI OPTIMIZED
 # ==========================================
 def hitung_indikator(df):
-    """Kalkulasi vektor cepat menggunakan pandas/numpy"""
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -64,9 +64,8 @@ def hitung_indikator(df):
     
     return df
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=10, show_spinner=False)
 def fetch_single_tf(tf, period="5d"):
-    """Mengambil dan memproses data per timeframe dengan caching 15 detik"""
     try:
         df = yf.download(tickers="GC=F", period=period, interval=tf, progress=False)
         if df.empty:
@@ -81,12 +80,8 @@ def fetch_single_tf(tf, period="5d"):
     except Exception:
         return None
 
-@st.cache_data(ttl=15, show_spinner=False)
+@st.cache_data(ttl=10, show_spinner=False)
 def hitung_ai_multi(timeframes=("1m", "5m", "15m")):
-    """
-    Fungsi Analisis Multi-Timeframe Teroptimasi.
-    Menghitung skor konfluensi tren gabungan secara cepat.
-    """
     hasil = {}
     skor_total = 0
     count = 0
@@ -100,7 +95,6 @@ def hitung_ai_multi(timeframes=("1m", "5m", "15m")):
             ema200 = float(last['EMA_200'])
             rsi = float(last['RSI_14'])
             
-            # Evaluasi Tren per Timeframe
             if close > ema50 > ema200 and rsi > 50:
                 bias = "BULLISH"
                 skor = 100
@@ -126,12 +120,14 @@ def hitung_ai_multi(timeframes=("1m", "5m", "15m")):
     return hasil, bias_global
 
 # ==========================================
-# 4. RENDER DASHBOARD UTAMA
+# 4. PROSES DATA DENGAN LOADING SPINNER
 # ==========================================
-df_live = fetch_single_tf(pilihan_tf, periode_data)
+with st.spinner("🔄 Sedang memperbarui harga live & konfluensi AI Multi-Timeframe..."):
+    df_live = fetch_single_tf(pilihan_tf, periode_data)
+    ai_data, bias_macro = hitung_ai_multi(timeframes=("1m", "5m", "15m"))
 
 if df_live is None or df_live.empty:
-    st.error("🚨 Gagal mengambil data pasar XAUUSD. Silakan coba beberapa saat lagi.")
+    st.error("🚨 Data pasar belum merespons. Menunggu sinkronisasi...")
 else:
     data_terbaru = df_live.iloc[-1:]
     
@@ -146,9 +142,6 @@ else:
     waktu_data = data_terbaru.index[0].strftime("%H:%M:%S")
     
     momentum_usd = harga_sekarang - harga_buka
-
-    # Menjalankan Analisis Multi-Timeframe AI (Sangat cepat karena dikas)
-    ai_data, bias_macro = hitung_ai_multi(timeframes=("1m", "5m", "15m"))
 
     # Logika Konfluensi
     skor_bullish = 0
@@ -174,7 +167,6 @@ else:
     elif 32 < rsi_sekarang <= 50:
         skor_bearish += 25
 
-    # Ekstra Sinyal dari AI Multi-Timeframe
     if bias_macro == "BULLISH":
         skor_bullish = min(100, skor_bullish + 10)
     elif bias_macro == "BEARISH":
@@ -209,8 +201,8 @@ else:
 
     st.sidebar.info(f"💡 **Ukuran Lot Aman:** `{lot_rekomendasi}` {unit_lot}")
 
-    # Panel Ringkasan Multi-Timeframe AI
-    st.markdown(f"⏱️ **Update Terakhir:** `{waktu_data}` | **AI Macro Bias:** `{bias_macro}`")
+    # Header Informasi
+    st.caption(f"⏱️ **Update Terakhir:** `{waktu_data}` | **AI Macro Trend:** `{bias_macro}`")
     
     col_tf1, col_tf2, col_tf3 = st.columns(3)
     for idx, (tf_key, tf_val) in enumerate(ai_data.items()):
@@ -276,9 +268,19 @@ else:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-# Auto-refresh halus menggunakan fitur bawaan Streamlit
-@st.fragment(run_every="15s")
-def auto_refresh_banner():
-    st.caption("🔄 Data otomatis diperbarui setiap 15 detik secara background.")
+    # ==========================================
+    # 5. VISUAL INDIKATOR AUTO-REFRESH & TIMER
+    # ==========================================
+    st.markdown("---")
+    progress_slot = st.empty()
 
-auto_refresh_banner()
+    # Hitung mundur 15 detik dengan Progress Bar visual
+    for sisa in range(15, 0, -1):
+        persen = int(((15 - sisa) / 15) * 100)
+        with progress_slot.container():
+            st.caption(f"🔄 **Status Sistem:** Data Aktif | *Auto-refresh* dalam **{sisa} detik**...")
+            st.progress(persen)
+        time.sleep(1)
+
+    # Pemicu Rerun Halaman
+    st.rerun()

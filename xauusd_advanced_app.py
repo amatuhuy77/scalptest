@@ -1,30 +1,3 @@
-import os
-import sys
-import subprocess
-
-# ==========================================
-# 0. SISTEM AUTO-INSTALL LIBRARY
-# ==========================================
-def install_missing_libraries():
-    required_libraries = {
-        'yfinance': 'yfinance',
-        'pandas': 'pandas',
-        'plotly': 'plotly',
-        'reportlab': 'reportlab'
-    }
-    for module_name, pip_name in required_libraries.items():
-        try:
-            __import__(module_name)
-        except ImportError:
-            print(f"📦 Menginstal otomatis {pip_name}...")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
-
-# Jalankan pengecekan dan instalasi otomatis sebelum aplikasi dimuat
-install_missing_libraries()
-
-# ==========================================
-# 1. IMPORT LIBRARY SETELAH DIPASTIKAN AMAN
-# ==========================================
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -39,7 +12,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # ==========================================
-# 2. KONFIGURASI HALAMAN STREAMLIT
+# 1. KONFIGURASI HALAMAN STREAMLIT
 # ==========================================
 st.set_page_config(
     page_title="XAUUSD Scalper Pro",
@@ -48,7 +21,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# 3. FUNGSI GENERATOR PDF GUIDEBOOK IN-MEMORY
+# 2. FUNGSI GENERATOR PDF GUIDEBOOK IN-MEMORY
 # ==========================================
 def buat_pdf_guidebook():
     buffer = io.BytesIO()
@@ -62,14 +35,14 @@ def buat_pdf_guidebook():
 
     story = []
     story.append(Paragraph("BUKU PANDUAN PENGGUNA (USER GUIDEBOOK)", title_style))
-    story.append(Paragraph("XAUUSD Scalper Pro — Modal Kecil Edition (v2.4)", subtitle_style))
+    story.append(Paragraph("XAUUSD Scalper Pro — Modal Kecil Edition (v2.5 AI Enhanced)", subtitle_style))
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#CBD5E1'), spaceAfter=10))
 
     story.append(Paragraph("1. PENDAHULUAN & KONSEP UTAMA", h1_style))
-    story.append(Paragraph("XAUUSD Scalper Pro dirancang khusus untuk perdagangan emas pada akun bermodal terbatas ($5 - $100). Sistem ini menggabungkan penentuan tren berbasis konfluensi indikator dengan Filter Area Pullback untuk memastikan eksekusi dilakukan pada rasio Risk/Reward terbaik.", body_style))
+    story.append(Paragraph("XAUUSD Scalper Pro dirancang khusus untuk perdagangan emas pada akun bermodal terbatas ($5 - $100). Sistem ini menggunakan kecerdasan analitik multi-timeframe untuk menyaring noise pasar dan memaksimalkan rasio Risk/Reward.", body_style))
 
-    story.append(Paragraph("2. ARSITEKTUR INDIKATOR TEKNIKAL", h1_style))
-    story.append(Paragraph("• <b>EMA 50 & EMA 200:</b> Menentukan tren utama dan batas Support/Resistance Dinamis.<br/>• <b>RSI 14:</b> Filter kejenuhan pasar (Zona Bullish: 50–68, Bearish: 32–50).<br/>• <b>MACD (12, 26, 9):</b> Konfirmasi persilangan momentum intraday.<br/>• <b>ATR 14:</b> Mengukur volatilitas harga dalam nominal Dolar ($).<br/>• <b>AI Multi-Timeframe Engine:</b> Memindai tren bersamaan di M1, M5, dan M15.", body_style))
+    story.append(Paragraph("2. ARSITEKTUR INDIKATOR & Kecerdasan Prediksi", h1_style))
+    story.append(Paragraph("• <b>EMA 50 & EMA 200:</b> Penentu tren makro dan dinamis Support/Resistance.<br/>• <b>RSI 14:</b> Filter zona momentum (Bullish: 50–68, Bearish: 32–50).<br/>• <b>MACD (12, 26, 9):</b> Konfirmasi kekuatan momentum pergerakan harga.<br/>• <b>ATR 14:</b> Pengukur volatilitas riil untuk menentukan batas Stop Loss & Take Profit otomatis.<br/>• <b>AI Multi-Timeframe Consensus:</b> Validasi silang tren di M1, M5, dan M15 secara simultan.", body_style))
 
     story.append(Paragraph("3. TABEL SKORING KONFLUENSI SINYAL", h1_style))
     table_data = [
@@ -102,7 +75,7 @@ def buat_pdf_guidebook():
     return buffer
 
 # ==========================================
-# 4. SIDEBAR: MANAJEMEN RISIKO & PARAMETER
+# 3. SIDEBAR: MANAJEMEN RISIKO & PARAMETER
 # ==========================================
 st.sidebar.header("🛡️ Manajemen Risiko & Sinyal")
 
@@ -128,7 +101,7 @@ st.sidebar.download_button(
 )
 
 # ==========================================
-# 5. FUNGSI INDIKATOR TEKNIKAL & AI ENGINE
+# 4. FUNGSI INDIKATOR TEKNIKAL & AI ENGINE
 # ==========================================
 def hitung_indikator(df):
     delta = df['Close'].diff()
@@ -189,18 +162,18 @@ def hitung_ai_multi(timeframes=("1m", "5m", "15m")):
     bias_global = "NEUTRAL"
     if count > 0:
         rata_skor = skor_total / count
-        if rata_skor >= 50: bias_global = "BULLISH"
-        elif rata_skor <= -50: bias_global = "BEARISH"
+        if rata_skor >= 40: bias_global = "BULLISH"
+        elif rata_skor <= -40: bias_global = "BEARISH"
     return hasil, bias_global
 
 # ==========================================
-# 6. TAMPILAN UTAMA TAB STREAMLIT
+# 5. TAMPILAN UTAMA TAB STREAMLIT
 # ==========================================
-st.title("⚡ XAUUSD Scalper Pro (Modal Kecil Edition)")
+st.title("⚡ XAUUSD Scalper Pro (AI Enhanced Edition)")
 tab_dashboard, tab_panduan = st.tabs(["📊 Live Scalper Dashboard", "📖 Buku Panduan & Pengertian"])
 
 with tab_dashboard:
-    with st.spinner("🔄 Sedang memperbarui data pasar & mengecek area Pullback..."):
+    with st.spinner("🔄 Menganalisis multi-timeframe consensus & area pullback..."):
         df_live = fetch_single_tf(pilihan_tf, periode_data)
         ai_data, bias_macro = hitung_ai_multi(timeframes=("1m", "5m", "15m"))
 
@@ -219,26 +192,39 @@ with tab_dashboard:
         waktu_data = data_terbaru.index[0].strftime("%H:%M:%S")
         momentum_usd = harga_sekarang - harga_buka
 
+        # Logika Penilaian Kecerdasan Prediksi (Skoring Konfluensi Lanjutan)
         skor_bullish, skor_bearish = 0, 0
-        if harga_sekarang > ema50_sekarang and ema50_sekarang > ema200_sekarang: skor_bullish += 30
-        elif harga_sekarang < ema50_sekarang and ema50_sekarang < ema200_sekarang: skor_bearish += 30
+        
+        # 1. Tren EMA (Bobot 30%)
+        if harga_sekarang > ema50_sekarang and ema50_sekarang > ema200_sekarang: 
+            skor_bullish += 30
+        elif harga_sekarang < ema50_sekarang and ema50_sekarang < ema200_sekarang: 
+            skor_bearish += 30
 
+        # 2. Momentum Lilin / Candle Direction (Bobot 20%)
         if momentum_usd > 0: skor_bullish += 20
         elif momentum_usd < 0: skor_bearish += 20
 
+        # 3. MACD Crossover (Bobot 25%)
         if macd_sekarang > macd_sig_sekarang: skor_bullish += 25
         else: skor_bearish += 25
 
+        # 4. Filter RSI Optimal (Bobot 25%)
         if 50 < rsi_sekarang < 68: skor_bullish += 25
         elif 32 < rsi_sekarang <= 50: skor_bearish += 25
 
-        if bias_macro == "BULLISH": skor_bullish = min(100, skor_bullish + 10)
-        elif bias_macro == "BEARISH": skor_bearish = min(100, skor_bearish + 10)
+        # 5. AI Macro Multi-Timeframe Bonus (Bobot +15%)
+        if bias_macro == "BULLISH": 
+            skor_bullish = min(100, skor_bullish + 15)
+        elif bias_macro == "BEARISH": 
+            skor_bearish = min(100, skor_bearish + 15)
 
+        # Filter Jarak Pullbar Terhadap EMA 50
         jarak_ke_ema50 = abs(harga_sekarang - ema50_sekarang)
         batas_jarak_ideal = atr_sekarang * toleransi_pullback_atr
         is_in_pullback_zone = jarak_ke_ema50 <= batas_jarak_ideal
 
+        # Penentuan Sinyal Akhir Berdasarkan Ambang Batas
         if skor_bullish >= min_konfluensi:
             bias_tren = "BUY"
             kekuatan = skor_bullish
@@ -254,23 +240,24 @@ with tab_dashboard:
             kekuatan = max(skor_bullish, skor_bearish)
             sl, tp = 0.0, 0.0
 
+        # Format Tampilan Status Sinyal Warna Berbeda
         if bias_tren == "BUY":
             if is_in_pullback_zone:
                 status_sinyal = "READY BUY"
-                catatan_pullback = f"✅ Harga di area Pullback ideal (Jarak ke EMA 50: `${jarak_ke_ema50:.2f}` <= `${batas_jarak_ideal:.2f}`). Momen Entry Presisi!"
+                catatan_pullback = f"✅ Sinyal Sangat Kuat! Harga di area Pullback ideal (Jarak ke EMA 50: `${jarak_ke_ema50:.2f}` <= `${batas_jarak_ideal:.2f}`). Eksekusi presisi tinggi."
             else:
                 status_sinyal = "WAIT PULLBACK (BUY)"
-                catatan_pullback = f"⏳ Tren kuat BUY, namun harga sudah *overextended* (terlalu jauh dari EMA 50). Tunggu harga memantul mendekati area `${ema50_sekarang:.2f}`."
+                catatan_pullback = f"⏳ Tren Bullish terdeteksi, namun harga *overextended* (terlalu jauh dari EMA 50 di `${ema50_sekarang:.2f}`). Tunggu koreksi sehat."
         elif bias_tren == "SELL":
             if is_in_pullback_zone:
                 status_sinyal = "READY SELL"
-                catatan_pullback = f"✅ Harga di area Pullback ideal (Jarak ke EMA 50: `${jarak_ke_ema50:.2f}` <= `${batas_jarak_ideal:.2f}`). Momen Entry Presisi!"
+                catatan_pullback = f"✅ Sinyal Sangat Kuat! Harga di area Pullback ideal (Jarak ke EMA 50: `${jarak_ke_ema50:.2f}` <= `${batas_jarak_ideal:.2f}`). Eksekusi presisi tinggi."
             else:
                 status_sinyal = "WAIT PULLBACK (SELL)"
-                catatan_pullback = f"⏳ Tren kuat SELL, namun harga sudah *overextended* (terlalu jauh dari EMA 50). Tunggu harga memantul mendekati area `${ema50_sekarang:.2f}`."
+                catatan_pullback = f"⏳ Tren Bearish terdeteksi, namun harga *overextended* (terlalu jauh dari EMA 50 di `${ema50_sekarang:.2f}`). Tunggu koreksi sehat."
         else:
             status_sinyal = "WAIT TREN"
-            catatan_pullback = "⚪ Konfluensi tren belum terpenuhi. Sabar menunggu persilangan atau breakout."
+            catatan_pullback = "⚪ Konsensus multi-timeframe belum sepakat. Pasar sedang konsolidasi atau menunggu arah breakout."
 
         jarak_sl_usd = abs(harga_sekarang - sl) if sl > 0 else (atr_sekarang * 1.5)
         jarak_sl_pips = jarak_sl_usd * 10
@@ -284,12 +271,12 @@ with tab_dashboard:
             lot_rekomendasi = max(0.1, round(lot_ideal, 1))
             unit_lot = "Lot Cent"
 
-        st.caption(f"⏱️ **Update Terakhir:** `{waktu_data}` | **AI Macro Trend:** `{bias_macro}` | **Status Pullback:** {'`DEKAT EMA 50`' if is_in_pullback_zone else '`OVEREXTENDED`'}")
+        st.caption(f"⏱️ **Update Terakhir:** `{waktu_data}` | **AI Multi-TF Consensus:** `{bias_macro}` | **Status Pullback:** {'`IDEAL (DEKAT EMA 50)`' if is_in_pullback_zone else '`OVEREXTENDED`'}")
         
         col_tf1, col_tf2, col_tf3 = st.columns(3)
         for idx, (tf_key, tf_val) in enumerate(ai_data.items()):
             col = [col_tf1, col_tf2, col_tf3][idx]
-            col.caption(f"TF {tf_key}: **{tf_val['bias']}** (RSI: {tf_val['rsi']:.1f})")
+            col.caption(f"Timeframe {tf_key}: **{tf_val['bias']}** (RSI: {tf_val['rsi']:.1f})")
 
         st.divider()
 
@@ -307,29 +294,29 @@ with tab_dashboard:
 
         with col_sig:
             if status_sinyal == "READY BUY":
-                st.success(f"🟢 **SIGNAL: {status_sinyal}**\n\nKekuatan Konfluensi: **{kekuatan}%**\n\n{catatan_pullback}")
+                st.success(f"🟢 **AI SIGNAL: {status_sinyal}**\n\nSkor Konfluensi: **{kekuatan}%**\n\n{catatan_pullback}")
             elif status_sinyal == "READY SELL":
-                st.error(f"🔴 **SIGNAL: {status_sinyal}**\n\nKekuatan Konfluensi: **{kekuatan}%**\n\n{catatan_pullback}")
+                st.error(f"🔴 **AI SIGNAL: {status_sinyal}**\n\nSkor Konfluensi: **{kekuatan}%**\n\n{catatan_pullback}")
             elif status_sinyal == "WAIT PULLBACK (BUY)":
-                st.warning(f"🟡 **STATUS: {status_sinyal}**\n\nKekuatan Konfluensi: **{kekuatan}%**\n\n{catatan_pullback}")
+                st.warning(f"🟡 **AI STATUS: {status_sinyal}**\n\nSkor Konfluensi: **{kekuatan}%**\n\n{catatan_pullback}")
             elif status_sinyal == "WAIT PULLBACK (SELL)":
-                st.warning(f"🟠 **STATUS: {status_sinyal}**\n\nKekuatan Konfluensi: **{kekuatan}%**\n\n{catatan_pullback}")
+                st.warning(f"🟠 **AI STATUS: {status_sinyal}**\n\nSkor Konfluensi: **{kekuatan}%**\n\n{catatan_pullback}")
             else:
-                st.info(f"⚪ **STATUS: {status_sinyal}**\n\nKonfluensi tertinggi: **{kekuatan}%** (Target: {min_konfluensi}%).\n\n{catatan_pullback}")
+                st.info(f"⚪ **AI STATUS: {status_sinyal}**\n\nKonfluensi tertinggi: **{kekuatan}%** (Target Min: {min_konfluensi}%).\n\n{catatan_pullback}")
 
         with col_plan:
             if bias_tren in ["BUY", "SELL"]:
                 st.markdown(f"""
-                **📋 TRADING PLAN & RISIKO:**
+                **📋 TRADING PLAN & MANAJEMEN RISIKO:**
                 * 🛡️ **Stop Loss (SL):** `${sl:.2f}` (Jarak: `${jarak_sl_usd:.2f}` / ~{jarak_sl_pips:.1f} Pips)
                 * 🎯 **Take Profit (TP):** `${tp:.2f}`
                 * ⚖️ **Rasio Risk/Reward:** `1 : 1.5`
-                * 💼 **Gunakan Size:** **`{lot_rekomendasi}` {unit_lot}**
+                * 💼 **Ukuran Lot Optimal:** **`{lot_rekomendasi}` {unit_lot}**
                 """)
             else:
-                st.info("💡 **Tips Modal Kecil:** Tunggu harga bergerak mendekati EMA 50 untuk mendapatkan Stop Loss yang lebih kecil dan rasio Risk/Reward lebih ideal.")
+                st.info("💡 **Tips Kecerdasan AI:** Jangan paksakan entry saat status *WAIT*. Biarkan algoritma menemukan titik pantul terbaik di dekat garis EMA 50.")
 
-        st.subheader(f"Grafik Candlestick & Area Pullback ({pilihan_tf})")
+        st.subheader(f"Grafik Candlestick & Sinyal Cerdas ({pilihan_tf})")
         df_chart = df_live.tail(45).copy()
         fig = go.Figure(data=[go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name="XAUUSD")])
         fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA_50'], line=dict(color='yellow', width=1.5), name='EMA 50 (Dynamic SR)'))
@@ -342,46 +329,25 @@ with tab_dashboard:
         for sisa in range(15, 0, -1):
             persen = int(((15 - sisa) / 15) * 100)
             with progress_slot.container():
-                st.caption(f"🔄 **Status Sistem:** Monitoring Pullback & Live Data | *Auto-refresh* dalam **{sisa} detik**...")
+                st.caption(f"🔄 **AI Engine:** Menyaring Noise Pasar & Kalkulasi Ulang | *Auto-refresh* dalam **{sisa} detik**...")
                 st.progress(persen)
             time.sleep(1)
         st.rerun()
 
 with tab_panduan:
-    st.header("📖 Buku Panduan & Pengertian Sistem")
-    st.caption("Panduan komprehensif indikator, logika skoring, dan manajemen risiko akun modal kecil.")
+    st.header("📖 Buku Panduan & Kecerdasan Prediksi")
+    st.caption("Penjelasan mendalam mengenai algoritma penyaringan sinyal dan manajemen risiko.")
     st.markdown("""
-    ### 1. PENGERTIAN INDIKATOR TEKNIKAL
-    * **EMA 50 & EMA 200 (Exponential Moving Average):**
-      * **EMA 200:** Indikator penentu tren utama (makro). Jika harga di atas EMA 200, pasar dalam fase *bullish*.
-      * **EMA 50:** Berfungsi sebagai *Support/Resistance* dinamis. Tempat terbaik mencari pantulan harga (*pullback*).
-    * **RSI 14 (Relative Strength Index):** Mengukur kecepatan dan perubahan pergerakan harga. Rentang 50–68 digunakan untuk konfirmasi *BUY*, dan 32–50 untuk *SELL*.
-    * **MACD (Moving Average Convergence Divergence):** Mengukur momentum persilangan pergerakan harga intraday.
-    * **ATR 14 (Average True Range):** Mengukur nilai volatilitas aktual pasar dalam Dolar ($). Digunakan untuk menghitung jarak Stop Loss dan Take Profit yang dinamis mengikuti kondisi pasar.
+    ### 1. CARA KERJA PREDIKSI CERDAS (AI CONSENSUS)
+    Sistem mengevaluasi probabilitas market dengan memadukan 5 parameter utama:
+    * **Konfirmasi Multi-Timeframe:** Tidak hanya melihat 1 timeframe, sistem memvalidasi keselarasan tren antara grafik 1 menit, 5 menit, dan 15 menit.
+    * **Filter Pullback Jarak ATR:** Mencegah entry impulsif saat harga sudah terlalu jauh dari rata-rata pergerakannya.
     ---
-    ### 2. LOGIKA SKORING & FILTER PULLBACK
-    Sistem mengevaluasi kondisi pasar dengan mengakumulasi skor persentase (%):
+    ### 2. TABEL BOBOT SKORING
     """)
     st.table(pd.DataFrame({
-        "Parameter Evaluasi": ["Tren EMA 50 & 200", "MACD Crossover", "Filter RSI", "Momentum Lilin", "AI Macro Bias"],
-        "Kondisi Bullish": ["Harga > EMA 50 > EMA 200", "MACD > Signal Line", "50 < RSI < 68", "Close > Open", "Macro Trend Bullish"],
-        "Kondisi Bearish": ["Harga < EMA 50 < EMA 200", "MACD < Signal Line", "32 < RSI <= 50", "Close < Open", "Macro Trend Bearish"],
-        "Bobot Skor": ["+30%", "+25%", "+25%", "+20%", "+10%"]
+        "Parameter Evaluasi": ["Tren EMA 50 & 200", "MACD Crossover", "Filter RSI", "Momentum Lilin", "AI Macro Consensus"],
+        "Kondisi Bullish": ["Harga > EMA 50 > EMA 200", "MACD > Signal Line", "50 < RSI < 68", "Close > Open", "Multi-TF Bullish"],
+        "Kondisi Bearish": ["Harga < EMA 50 < EMA 200", "MACD < Signal Line", "32 < RSI <= 50", "Close < Open", "Multi-TF Bearish"],
+        "Bobot Skor": ["+30%", "+25%", "+25%", "+20%", "+15%"]
     }))
-    st.markdown("""
-    **Penjelasan Status Sinyal:**
-    * **READY BUY / SELL:** Konfluensi $\ge$ Min. Konfluensi DAN harga berada di dekat EMA 50 (area pemantulan ideal).
-    * **WAIT PULLBACK:** Konfluensi tren terkuat terpenuhi, namun harga sudah terlanjur melompat jauh dari EMA 50 (*overextended*). Dilarang mengejar harga.
-    * **WAIT TREN:** Skor konfluensi belum mencapai ambang batas minimal.
-    ---
-    ### 3. FORMULA MANAJEMEN RISIKO & LOT AUTOMATION
-    Sistem menghitung ukuran lot berdasarkan Dolar ($) yang siap dirisikokan, bukan pips statis:
-    $$\text{Max Risk USD} = \text{Modal Akun} \times \left(\frac{\text{Batas Risiko \%}}{100}\right)$$
-    * **Akun Standard / Raw Spread:** $\text{Lot Standard} = \frac{\text{Max Risk USD}}{\text{Jarak SL USD} \times 100}$
-    * **Akun Cent:** $\text{Lot Cent} = \frac{\text{Max Risk USD}}{\text{Jarak SL USD} \times 1}$
-    ---
-    ### 4. STRATEGI EXECUTION & ATURAN DISIPLIN
-    1. **Disiplin Lot:** Gunakan selalu lot rekomendasi dari sistem. Jangan menambah lot saat mengalami *loss*.
-    2. **Patuhi Status WAIT PULLBACK:** Mengejar harga yang sudah melompat jauh adalah penyebab utama *Stop Loss* tersentuh akibat koreksi alami pasar.
-    3. **Hindari High-Impact News:** Fluktuasi saat rilis berita besar dapat melebar skenario *spread* broker.
-    """)
